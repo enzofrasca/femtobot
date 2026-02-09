@@ -3,10 +3,12 @@ use serde_json::{Map, Value};
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::process;
 
 pub fn run() -> Result<()> {
     let path = crate::config::config_path();
     let mut root = load_config_value(&path)?;
+    let initial_root = root.clone();
     let mut dirty = false;
 
     println!("femtobot configure");
@@ -24,32 +26,38 @@ pub fn run() -> Result<()> {
         println!("7. Save and exit");
         println!("8. Exit without saving");
         print!("Select an option: ");
-        io::stdout().flush().ok();
+        io::stdout().flush()?;
 
         let choice = read_line()?.trim().to_string();
         println!();
 
         match choice.as_str() {
             "1" => {
-                dirty |= configure_provider(&mut root)?;
+                let _ = configure_provider(&mut root)?;
+                dirty = root != initial_root;
             }
             "2" => {
-                dirty |= configure_telegram(&mut root)?;
+                let _ = configure_telegram(&mut root)?;
+                dirty = root != initial_root;
             }
             "3" => {
-                dirty |= configure_model(&mut root)?;
+                let _ = configure_model(&mut root)?;
+                dirty = root != initial_root;
             }
             "4" => {
-                dirty |= configure_web_search(&mut root)?;
+                let _ = configure_web_search(&mut root)?;
+                dirty = root != initial_root;
             }
             "5" => {
-                dirty |= configure_transcription(&mut root)?;
+                let _ = configure_transcription(&mut root)?;
+                dirty = root != initial_root;
             }
             "6" => {
                 println!("Config path: {}", path.display());
             }
             "7" => {
                 if dirty {
+                    print_change_summary(&initial_root, &root);
                     save_config_value(&path, &root)?;
                     println!("Saved.");
                 } else {
@@ -74,19 +82,14 @@ pub fn run() -> Result<()> {
 }
 
 fn configure_provider(root: &mut Value) -> Result<bool> {
+    let before = root.clone();
     let current_provider =
         get_str_at(root, &["agents", "defaults", "provider"]).unwrap_or("openrouter");
-    let provider = prompt_with_current("Active provider (openrouter/openai)", current_provider)?;
-    let provider = if provider.trim().is_empty() {
-        current_provider.to_string()
-    } else {
-        provider.trim().to_ascii_lowercase()
-    };
-
-    if !matches!(provider.as_str(), "openrouter" | "openai") {
-        println!("Invalid provider. Supported: openrouter, openai");
-        return Ok(false);
-    }
+    let provider = prompt_enum_with_current(
+        "Active provider (openrouter/openai)",
+        current_provider,
+        &["openrouter", "openai"],
+    )?;
     let normalized = provider;
 
     set_path(
@@ -130,10 +133,11 @@ fn configure_provider(root: &mut Value) -> Result<bool> {
         _ => {}
     }
 
-    Ok(true)
+    Ok(root != &before)
 }
 
 fn configure_telegram(root: &mut Value) -> Result<bool> {
+    let before = root.clone();
     let current_token = get_str_at(root, &["channels", "telegram", "token"]).unwrap_or("");
     let current_allow = get_array_at(root, &["channels", "telegram", "allow_from"]);
     let current_allow_str = if current_allow.is_empty() {
@@ -170,10 +174,11 @@ fn configure_telegram(root: &mut Value) -> Result<bool> {
         Value::Array(allow_list.into_iter().map(Value::String).collect()),
     )?;
 
-    Ok(true)
+    Ok(root != &before)
 }
 
 fn configure_model(root: &mut Value) -> Result<bool> {
+    let before = root.clone();
     let current_model =
         get_str_at(root, &["agents", "defaults", "model"]).unwrap_or("anthropic/claude-opus-4-5");
     let current_fallbacks = get_array_at(root, &["agents", "defaults", "model_fallbacks"]);
@@ -205,10 +210,11 @@ fn configure_model(root: &mut Value) -> Result<bool> {
         &["agents", "defaults", "model_fallbacks"],
         Value::Array(fallback_list.into_iter().map(Value::String).collect()),
     )?;
-    Ok(true)
+    Ok(root != &before)
 }
 
 fn configure_web_search(root: &mut Value) -> Result<bool> {
+    let before = root.clone();
     let current = get_str_at(root, &["tools", "web", "search", "apiKey"]).unwrap_or("");
     let key = prompt_secret("Brave API key", current)?;
     set_path(
@@ -216,18 +222,22 @@ fn configure_web_search(root: &mut Value) -> Result<bool> {
         &["tools", "web", "search", "apiKey"],
         Value::String(key),
     )?;
-    Ok(true)
+    Ok(root != &before)
 }
 
 fn configure_transcription(root: &mut Value) -> Result<bool> {
+    let before = root.clone();
     let current_enabled =
         get_bool_at(root, &["channels", "telegram", "transcription", "enabled"]).unwrap_or(true);
     let current_provider = get_str_at(root, &["channels", "telegram", "transcription", "provider"])
-        .unwrap_or("openai");
+        .unwrap_or("openai")
+        .to_string();
     let current_model = get_str_at(root, &["channels", "telegram", "transcription", "model"])
-        .unwrap_or("whisper-1");
-    let current_language =
-        get_str_at(root, &["channels", "telegram", "transcription", "language"]).unwrap_or("");
+        .unwrap_or("whisper-1")
+        .to_string();
+    let current_language = get_str_at(root, &["channels", "telegram", "transcription", "language"])
+        .unwrap_or("")
+        .to_string();
     let current_max_bytes = get_u64_at(
         root,
         &["channels", "telegram", "transcription", "max_bytes"],
@@ -239,7 +249,8 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
         root,
         &["channels", "telegram", "transcription", "context_bias"],
     )
-    .unwrap_or("");
+    .unwrap_or("")
+    .to_string();
     let current_grans = get_array_at(
         root,
         &[
@@ -255,55 +266,19 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
         current_grans.join(",")
     };
 
-    let enabled_raw = prompt_with_current(
-        "Enable transcription (true/false)",
-        if current_enabled { "true" } else { "false" },
+    let enabled = prompt_bool_with_current("Enable transcription (true/false)", current_enabled)?;
+    let provider = prompt_enum_with_current(
+        "Transcription provider (openai/mistral)",
+        &current_provider,
+        &["openai", "mistral"],
     )?;
-    let enabled = parse_bool_input(&enabled_raw).unwrap_or(current_enabled);
 
-    let provider_raw =
-        prompt_with_current("Transcription provider (openai/mistral)", current_provider)?;
-    let provider = if provider_raw.trim().is_empty() {
-        current_provider.to_string()
-    } else {
-        provider_raw.trim().to_ascii_lowercase()
-    };
-    if !matches!(provider.as_str(), "openai" | "mistral") {
-        println!("Invalid transcription provider. Supported: openai, mistral");
-        return Ok(false);
-    }
-
-    let model = prompt_with_current("Transcription model", current_model)?;
+    let model = prompt_with_current("Transcription model", &current_model)?;
     let language = prompt_with_current(
         "Transcription language (empty = auto-detect)",
-        current_language,
+        &current_language,
     )?;
-    let max_bytes_raw = prompt_with_current("Max audio bytes", &current_max_bytes.to_string())?;
-    let max_bytes = max_bytes_raw.parse::<u64>().unwrap_or(current_max_bytes);
-
-    let diarize_raw = prompt_with_current(
-        "Enable diarization (Mistral only, true/false)",
-        if current_diarize { "true" } else { "false" },
-    )?;
-    let diarize = parse_bool_input(&diarize_raw).unwrap_or(current_diarize);
-    let context_bias = prompt_with_current(
-        "Context bias (Mistral only, comma-separated terms)",
-        current_context_bias,
-    )?;
-    let grans_raw = prompt_with_current(
-        "Timestamp granularities (Mistral only, comma-separated e.g. segment,word)",
-        &current_grans_str,
-    )?;
-    let grans = if grans_raw.trim().is_empty() {
-        current_grans
-    } else {
-        grans_raw
-            .split(',')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-    };
+    let max_bytes = prompt_u64_with_current("Max audio bytes", current_max_bytes)?;
 
     set_path(
         root,
@@ -333,12 +308,12 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
     set_path(
         root,
         &["channels", "telegram", "transcription", "diarize"],
-        Value::Bool(diarize),
+        Value::Bool(current_diarize),
     )?;
     set_path(
         root,
         &["channels", "telegram", "transcription", "context_bias"],
-        Value::String(context_bias),
+        Value::String(current_context_bias.clone()),
     )?;
     set_path(
         root,
@@ -348,10 +323,51 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
             "transcription",
             "timestamp_granularities",
         ],
-        Value::Array(grans.into_iter().map(Value::String).collect()),
+        Value::Array(current_grans.iter().cloned().map(Value::String).collect()),
     )?;
 
     if provider == "mistral" {
+        let diarize = prompt_bool_with_current(
+            "Enable diarization (true/false)",
+            current_diarize,
+        )?;
+        let context_bias =
+            prompt_with_current("Context bias (comma-separated terms)", &current_context_bias)?;
+        let grans_raw = prompt_with_current(
+            "Timestamp granularities (comma-separated e.g. segment,word)",
+            &current_grans_str,
+        )?;
+        let grans = if grans_raw.trim().is_empty() {
+            current_grans
+        } else {
+            grans_raw
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        };
+        set_path(
+            root,
+            &["channels", "telegram", "transcription", "diarize"],
+            Value::Bool(diarize),
+        )?;
+        set_path(
+            root,
+            &["channels", "telegram", "transcription", "context_bias"],
+            Value::String(context_bias),
+        )?;
+        set_path(
+            root,
+            &[
+                "channels",
+                "telegram",
+                "transcription",
+                "timestamp_granularities",
+            ],
+            Value::Array(grans.into_iter().map(Value::String).collect()),
+        )?;
+
         let current_key = get_str_at(root, &["providers", "mistral", "apiKey"]).unwrap_or("");
         let current_base = get_str_at(root, &["providers", "mistral", "apiBase"])
             .unwrap_or("https://api.mistral.ai/v1");
@@ -369,7 +385,7 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
         )?;
     }
 
-    Ok(true)
+    Ok(root != &before)
 }
 
 fn load_config_value(path: &PathBuf) -> Result<Value> {
@@ -394,7 +410,19 @@ fn save_config_value(path: &PathBuf, value: &Value) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     let content = serde_json::to_string_pretty(value)?;
-    fs::write(path, content)?;
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| anyhow!("invalid config file path: {}", path.display()))?;
+    let tmp_path = path.with_file_name(format!(
+        ".{file_name}.tmp-{}-{}",
+        process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos()
+    ));
+    fs::write(&tmp_path, content)?;
+    fs::rename(&tmp_path, path)?;
     Ok(())
 }
 
@@ -413,12 +441,53 @@ fn prompt_with_options(label: &str, current: &str, secret: bool) -> Result<Strin
         (false, true) => print!("{label}: "),
         (false, false) => print!("{label} [{current}]: "),
     }
-    io::stdout().flush().ok();
+    io::stdout().flush()?;
     let input = read_line()?.trim().to_string();
     if input.is_empty() && !current.trim().is_empty() {
         Ok(current.to_string())
     } else {
         Ok(input)
+    }
+}
+
+fn prompt_bool_with_current(label: &str, current: bool) -> Result<bool> {
+    loop {
+        let raw = prompt_with_current(label, if current { "true" } else { "false" })?;
+        if raw.trim().is_empty() {
+            return Ok(current);
+        }
+        if let Some(v) = parse_bool_input(&raw) {
+            return Ok(v);
+        }
+        println!("Invalid value. Enter true/false, yes/no, y/n, or 1/0.");
+    }
+}
+
+fn prompt_u64_with_current(label: &str, current: u64) -> Result<u64> {
+    loop {
+        let raw = prompt_with_current(label, &current.to_string())?;
+        if raw.trim().is_empty() {
+            return Ok(current);
+        }
+        match raw.parse::<u64>() {
+            Ok(v) => return Ok(v),
+            Err(_) => println!("Invalid number. Enter a non-negative integer."),
+        }
+    }
+}
+
+fn prompt_enum_with_current(label: &str, current: &str, allowed: &[&str]) -> Result<String> {
+    loop {
+        let raw = prompt_with_current(label, current)?;
+        let candidate = if raw.trim().is_empty() {
+            current.to_string()
+        } else {
+            raw.trim().to_ascii_lowercase()
+        };
+        if allowed.iter().any(|v| *v == candidate) {
+            return Ok(candidate);
+        }
+        println!("Invalid value. Supported: {}", allowed.join(", "));
     }
 }
 
@@ -437,9 +506,14 @@ fn set_path(value: &mut Value, path: &[&str], new_value: Value) -> Result<()> {
     }
     let mut cur = value;
     for (idx, key) in path[..path.len() - 1].iter().enumerate() {
+        let parent_path = if idx == 0 {
+            "<root>".to_string()
+        } else {
+            path[..idx].join(".")
+        };
         let obj = cur
             .as_object_mut()
-            .ok_or_else(|| anyhow!("invalid config: '{}' must be an object", path[..idx].join(".")))?;
+            .ok_or_else(|| anyhow!("invalid config: '{parent_path}' must be an object"))?;
         cur = obj
             .entry((*key).to_string())
             .or_insert_with(|| Value::Object(Map::new()));
@@ -458,6 +532,53 @@ fn set_path(value: &mut Value, path: &[&str], new_value: Value) -> Result<()> {
     })?;
     obj.insert(path[path.len() - 1].to_string(), new_value);
     Ok(())
+}
+
+fn print_change_summary(before: &Value, after: &Value) {
+    let mut changed = Vec::new();
+    collect_changed_paths(before, after, String::new(), &mut changed);
+    if changed.is_empty() {
+        return;
+    }
+    println!("Changes to save:");
+    for path in changed {
+        println!("- {path}");
+    }
+}
+
+fn collect_changed_paths(before: &Value, after: &Value, prefix: String, out: &mut Vec<String>) {
+    if before == after {
+        return;
+    }
+    match (before, after) {
+        (Value::Object(bm), Value::Object(am)) => {
+            let mut keys: Vec<&str> = bm
+                .keys()
+                .chain(am.keys())
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            keys.sort_unstable();
+            keys.dedup();
+            for key in keys {
+                let child_prefix = if prefix.is_empty() {
+                    key.to_string()
+                } else {
+                    format!("{prefix}.{key}")
+                };
+                match (bm.get(key), am.get(key)) {
+                    (Some(bv), Some(av)) => collect_changed_paths(bv, av, child_prefix, out),
+                    _ => out.push(child_prefix),
+                }
+            }
+        }
+        _ => {
+            out.push(if prefix.is_empty() {
+                "<root>".to_string()
+            } else {
+                prefix
+            });
+        }
+    }
 }
 
 fn get_str_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
