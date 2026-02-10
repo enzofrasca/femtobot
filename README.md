@@ -36,6 +36,8 @@ Supported platforms:
 - macOS x86_64
 - macOS ARM64 (Apple Silicon)
 
+Note: A Windows binary exists, but it is currently less stable and not as well-supported as the others.
+
 ## What You Get
 
 - Single-binary deploy: ship one executable, no Python runtime.
