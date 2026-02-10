@@ -94,10 +94,6 @@ impl AppConfig {
             ));
         }
 
-        if cfg.telegram_bot_token.trim().is_empty() {
-            return Err(anyhow!("missing Telegram bot token (set TELOXIDE_TOKEN or channels.telegram.token in ~/.femtobot/config.json)"));
-        }
-
         Ok(cfg)
     }
 
@@ -160,6 +156,10 @@ impl AppConfig {
             ProviderKind::OpenRouter | ProviderKind::OpenAI => true,
             ProviderKind::Ollama => false,
         }
+    }
+
+    pub fn telegram_enabled(&self) -> bool {
+        !self.telegram_bot_token.trim().is_empty()
     }
 
     pub fn model_routes(&self) -> Vec<ModelRoute> {

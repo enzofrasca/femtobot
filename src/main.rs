@@ -11,6 +11,8 @@ mod transcription;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use tokio::io::{self, AsyncBufReadExt};
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -23,6 +25,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Run,
+    Tui,
     Configure,
     Cron {
         /// Admin cron operations (tool-driven scheduling is preferred)
@@ -48,6 +51,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command.unwrap_or(Commands::Run) {
         Commands::Run => run().await,
+        Commands::Tui => run_tui().await,
         Commands::Configure => configure::run(),
         Commands::Cron { command } => handle_cron(command).await,
     }
@@ -67,8 +71,23 @@ async fn run() -> Result<()> {
         agent.run().await;
     });
 
-    telegram::start(cfg, bus, bus_handle).await?;
+    if cfg.telegram_enabled() {
+        if let Err(err) = telegram::start(cfg, bus, bus_handle).await {
+            warn!("telegram disabled: {err}");
+            warn!("femtobot is running without Telegram input/output; press Ctrl+C to exit");
+            wait_for_shutdown().await?;
+        }
+    } else {
+        info!("Telegram token not configured; running without Telegram input/output");
+        info!("Set TELOXIDE_TOKEN or channels.telegram.token to enable Telegram");
+        wait_for_shutdown().await?;
+    }
 
+    Ok(())
+}
+
+async fn wait_for_shutdown() -> Result<()> {
+    tokio::signal::ctrl_c().await?;
     Ok(())
 }
 
@@ -140,6 +159,58 @@ async fn handle_cron(cmd: CronCommands) -> Result<()> {
             Err(e) => println!("Error removing job: {}", e),
         },
     }
+    Ok(())
+}
+
+async fn run_tui() -> Result<()> {
+    let cfg = config::AppConfig::load()?;
+    let (bus, bus_handle) = bus::MessageBus::new();
+
+    let cron_service = cron::CronService::new(&cfg, bus.clone());
+    cron_service.start().await;
+
+    let agent = agent::AgentLoop::new(cfg, bus.clone(), cron_service);
+    tokio::spawn(async move {
+        agent.run().await;
+    });
+
+    tokio::spawn(async move {
+        loop {
+            let next = {
+                let mut rx = bus_handle.outbound_rx.lock().await;
+                rx.recv().await
+            };
+            let Some(msg) = next else {
+                break;
+            };
+            if msg.channel != "tui" {
+                continue;
+            }
+            println!("\nassistant> {}\n", msg.content.trim());
+        }
+    });
+
+    println!("femtobot TUI mode");
+    println!("Type messages and press Enter. Type /exit to quit.\n");
+
+    let mut lines = io::BufReader::new(io::stdin()).lines();
+    while let Some(line) = lines.next_line().await? {
+        let content = line.trim().to_string();
+        if content.is_empty() {
+            continue;
+        }
+        if content == "/exit" {
+            break;
+        }
+        bus.publish_inbound(bus::InboundMessage {
+            channel: "tui".to_string(),
+            chat_id: "local".to_string(),
+            sender_id: "local".to_string(),
+            content,
+        })
+        .await;
+    }
+
     Ok(())
 }
 

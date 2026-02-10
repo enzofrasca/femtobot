@@ -1,7 +1,7 @@
 use crate::bus::{BusHandle, InboundMessage, MessageBus};
 use crate::config::AppConfig;
 use crate::transcription::Transcriber;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use teloxide::dispatching::UpdateHandler;
 use teloxide::net::Download;
@@ -11,6 +11,9 @@ use tracing::{info, warn};
 
 pub async fn start(cfg: AppConfig, bus: MessageBus, bus_handle: BusHandle) -> Result<()> {
     let bot = Bot::new(cfg.telegram_bot_token.clone());
+    bot.get_me()
+        .await
+        .map_err(|err| anyhow!("telegram authentication failed: {err}"))?;
 
     spawn_outbound_forwarder(bot.clone(), bus_handle);
 
