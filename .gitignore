@@ -1,5 +1,10 @@
 # Rust build artifacts
 /target/
+/dist/
+
+# Local packaged binaries/checksums
+/femtobot-*
+/femtobot-*.sha256
 
 # Local runtime/state data
 /.femtobot/

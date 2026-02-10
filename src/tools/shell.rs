@@ -80,6 +80,47 @@ impl ExecTool {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn build_shell_command(command: &str, cwd: &Path) -> Result<(Command, Option<Command>), ToolError> {
+    let mut primary = if let Some(comspec) = std::env::var_os("ComSpec") {
+        Command::new(comspec)
+    } else {
+        Command::new("cmd.exe")
+    };
+    primary.arg("/C").arg(command).current_dir(cwd);
+    primary.stdout(std::process::Stdio::piped());
+    primary.stderr(std::process::Stdio::piped());
+
+    let mut fallback = Command::new("cmd.exe");
+    fallback.arg("/C").arg(command).current_dir(cwd);
+    fallback.stdout(std::process::Stdio::piped());
+    fallback.stderr(std::process::Stdio::piped());
+
+    Ok((primary, Some(fallback)))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn build_shell_command(command: &str, cwd: &Path) -> Result<(Command, Option<Command>), ToolError> {
+    let shell = if Path::new("/bin/sh").exists() {
+        "/bin/sh"
+    } else {
+        "sh"
+    };
+
+    let mut primary = Command::new(shell);
+    primary.arg("-c").arg(command).current_dir(cwd);
+    primary.stdout(std::process::Stdio::piped());
+    primary.stderr(std::process::Stdio::piped());
+
+    let fallback = if shell == "/bin/sh" { "sh" } else { "/bin/sh" };
+    let mut fallback_cmd = Command::new(fallback);
+    fallback_cmd.arg("-c").arg(command).current_dir(cwd);
+    fallback_cmd.stdout(std::process::Stdio::piped());
+    fallback_cmd.stderr(std::process::Stdio::piped());
+
+    Ok((primary, Some(fallback_cmd)))
+}
+
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct ExecArgs {
     /// The shell command to execute
@@ -120,28 +161,22 @@ impl Tool for ExecTool {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| self.working_dir.clone());
 
-            let shell = if Path::new("/bin/sh").exists() {
-                "/bin/sh"
-            } else {
-                "sh"
-            };
-
-            let mut cmd = Command::new(shell);
-            cmd.arg("-c").arg(&args.command).current_dir(&cwd);
-            cmd.stdout(std::process::Stdio::piped());
-            cmd.stderr(std::process::Stdio::piped());
+            let (mut cmd, fallback) = build_shell_command(&args.command, &cwd)?;
 
             let mut child = match cmd.spawn() {
                 Ok(child) => child,
                 Err(err) => {
-                    let fallback = if shell == "/bin/sh" { "sh" } else { "/bin/sh" };
-                    let mut retry = Command::new(fallback);
-                    retry.arg("-c").arg(&args.command).current_dir(&cwd);
-                    retry.stdout(std::process::Stdio::piped());
-                    retry.stderr(std::process::Stdio::piped());
-                    retry.spawn().map_err(|e| ToolError::msg(format!(
-                    "failed to launch shell ({shell}): {err}; fallback ({fallback}) also failed: {e}"
-                )))?
+                    if let Some(mut retry) = fallback {
+                        retry.spawn().map_err(|e| {
+                            ToolError::msg(format!(
+                                "failed to launch shell command: {err}; fallback also failed: {e}"
+                            ))
+                        })?
+                    } else {
+                        return Err(ToolError::msg(format!(
+                            "failed to launch shell command: {err}"
+                        )));
+                    }
                 }
             };
             let timeout = tokio::time::Duration::from_secs(self.timeout_secs);

@@ -12,6 +12,7 @@ REPO="${REPO:-enzofrasca/femtobot}"
 VERSION="${1:-}"
 RELEASE_NAME="v${VERSION}"
 IS_PRERELEASE=false
+DIST_DIR="${DIST_DIR:-dist}"
 
 if [[ -z "${VERSION}" ]]; then
     echo "Usage: ./release.sh <version>"
@@ -100,18 +101,22 @@ ASSETS=(
     "femtobot-linux-aarch64"
     "femtobot-darwin-x86_64"
     "femtobot-darwin-aarch64"
+    "femtobot-windows-x86_64.exe"
 )
 
 for asset in "${ASSETS[@]}"; do
-    if [[ -f "${asset}" ]]; then
-        sha256_file "${asset}"
+    if [[ -f "${DIST_DIR}/${asset}" ]]; then
+        sha256_file "${DIST_DIR}/${asset}"
     fi
 done
 
-UPLOAD_ASSETS=("${ASSETS[@]}")
+UPLOAD_ASSETS=()
 for asset in "${ASSETS[@]}"; do
+    if [[ -f "${DIST_DIR}/${asset}" ]]; then
+        UPLOAD_ASSETS+=("${asset}")
+    fi
     checksum_asset="${asset}.sha256"
-    if [[ -f "${checksum_asset}" ]]; then
+    if [[ -f "${DIST_DIR}/${checksum_asset}" ]]; then
         UPLOAD_ASSETS+=("${checksum_asset}")
     fi
 done
@@ -120,7 +125,7 @@ RELEASE_DATA=$(cat <<EOF
 {
   "tag_name": "v${VERSION}",
   "name": "${RELEASE_NAME}",
-  "body": "femtobot v${VERSION}\n\nBinaries for Linux and macOS (Intel and Apple Silicon)",
+  "body": "femtobot v${VERSION}\n\nBinaries for Linux, macOS, and Windows (Intel and Apple Silicon where supported)",
   "draft": false,
   "prerelease": ${IS_PRERELEASE}
 }
@@ -142,7 +147,8 @@ if [[ -z "${UPLOAD_URL}" ]] || [[ -z "${RELEASE_ID}" ]]; then
 fi
 
 for asset in "${UPLOAD_ASSETS[@]}"; do
-    if [[ -f "${asset}" ]]; then
+    local_asset="${DIST_DIR}/${asset}"
+    if [[ -f "${local_asset}" ]]; then
         release_assets_json="$(api_get "https://api.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets")"
         existing_asset_id="$(json_asset_id_by_name "${release_assets_json}" "${asset}")"
         if [[ -n "${existing_asset_id}" ]]; then
@@ -154,7 +160,7 @@ for asset in "${UPLOAD_ASSETS[@]}"; do
         fi
 
         echo "Uploading ${asset}..."
-        asset_size=$(wc -c < "${asset}")
+        asset_size=$(wc -c < "${local_asset}")
 
         curl -sf -X POST \
             -H "Authorization: token ${GITHUB_TOKEN}" \
@@ -162,11 +168,11 @@ for asset in "${UPLOAD_ASSETS[@]}"; do
             -H "Content-Type: application/octet-stream" \
             -H "Content-Length: ${asset_size}" \
             "${UPLOAD_URL}?name=${asset}" \
-            --data-binary "@${asset}" > /dev/null
+            --data-binary "@${local_asset}" > /dev/null
 
         echo "✓ Uploaded ${asset}"
     else
-        echo "⚠ Skipping ${asset} (not found)"
+        echo "⚠ Skipping ${asset} (not found at ${local_asset})"
     fi
 done
 
