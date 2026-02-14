@@ -45,6 +45,7 @@ Note: A Windows binary exists, but it is currently less stable and not as well-s
 - Telegram/Discord-native interface: high-performance polling built in.
 - Local-first memory: vectors + metadata stored locally with SQLite.
 - Rust reliability: strong typing, memory safety, and concurrency.
+- Skills support: OpenClaw-style `SKILL.md` skills via `activate_skill`.
 
 ## Memory System
 
@@ -105,9 +106,19 @@ Create `~/.femtobot/config.json`:
       "allow_from": ["123456789012345678"],
       "allowed_channels": ["123456789012345678"]
     }
+  },
+  "tools": {
+    "web": {
+      "search": {
+        "provider": "firecrawl",
+        "firecrawlApiKey": "fc-..."
+      }
+    }
   }
 }
 ```
+
+`tools.web.search.provider` controls both `web_search` and `web_fetch` tool backends.
 
 ## Build From Source
 
@@ -134,6 +145,36 @@ femtobot uses an actor-like model with a central `MessageBus`:
 
 All components run on a single async Tokio runtime.
 
+## Skills
+
+femtobot can discover and activate OpenClaw-style skills from:
+
+- `~/.femtobot/workspace/skills/*/SKILL.md`
+- `~/.femtobot/workspace/.agents/skills/*/SKILL.md`
+- `~/.agents/skills/*/SKILL.md`
+
+When relevant, the model can call `activate_skill` to load the full instructions for a skill.
+
+### Skills CLI
+
+femtobot includes a native `skills` command group backed by Rust APIs for ClawHub and skills.sh/source installs.
+
+```bash
+# Search on ClawHub
+femtobot skills search "calendar"
+
+# Search on skills.sh
+femtobot skills find react
+
+# Install from ClawHub
+femtobot skills install weather --from clawhub
+
+# Install from source (OpenClaw-compatible project layout)
+femtobot skills install vercel-labs/agent-skills --from skills
+```
+
+For `--from skills`, installs land in `./skills` under the workspace.
+
 ## Project Structure
 
 ```text
@@ -145,6 +186,8 @@ src/
   bus.rs          # Message bus for component coordination
   config.rs       # Config schema and loading
   configure.rs    # CLI setup flow for local configuration
+  skillhub.rs     # Native ClawHub/skills.sh/source integration
+  skills_cli.rs   # CLI wrapper for skill discovery and install
   main.rs         # Application entrypoint and runtime wiring
   telegram.rs     # Telegram channel integration
   transcription.rs # Audio transcription integration

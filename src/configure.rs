@@ -25,8 +25,8 @@ pub fn run() -> Result<()> {
             .item(MenuAction::Channels, "Channels", "Telegram, Discord")
             .item(
                 MenuAction::WebSearch,
-                "Web search (Brave)",
-                "Brave Search API key",
+                "Web provider",
+                "Brave or Firecrawl (search + fetch)",
             )
             .item(
                 MenuAction::Transcription,
@@ -312,13 +312,50 @@ fn configure_model(root: &mut Value) -> Result<bool> {
 
 fn configure_web_search(root: &mut Value) -> Result<bool> {
     let before = root.clone();
-    let current = get_str_at(root, &["tools", "web", "search", "apiKey"]).unwrap_or("");
-    let key = prompt_secret("Brave API key", current)?;
+    let current_provider = get_str_at(root, &["tools", "web", "search", "provider"])
+        .unwrap_or("brave")
+        .to_ascii_lowercase();
+    let provider = select("Web provider")
+        .item("brave", "Brave", "Brave Search API")
+        .item("firecrawl", "Firecrawl", "Firecrawl Search API")
+        .initial_value(&current_provider)
+        .interact()?;
     set_path(
         root,
-        &["tools", "web", "search", "apiKey"],
-        Value::String(key),
+        &["tools", "web", "search", "provider"],
+        Value::String(provider.to_string()),
     )?;
+
+    let current_brave = get_str_at(root, &["tools", "web", "search", "braveApiKey"])
+        .or_else(|| get_str_at(root, &["tools", "web", "search", "apiKey"]))
+        .unwrap_or("");
+    let current_firecrawl =
+        get_str_at(root, &["tools", "web", "search", "firecrawlApiKey"]).unwrap_or("");
+    let key = if provider == "firecrawl" {
+        prompt_secret("Firecrawl API key", current_firecrawl)?
+    } else {
+        prompt_secret("Brave API key", current_brave)?
+    };
+
+    if provider == "firecrawl" {
+        set_path(
+            root,
+            &["tools", "web", "search", "firecrawlApiKey"],
+            Value::String(key),
+        )?;
+    } else {
+        set_path(
+            root,
+            &["tools", "web", "search", "braveApiKey"],
+            Value::String(key.clone()),
+        )?;
+        // Keep legacy path for backward compatibility with existing configs.
+        set_path(
+            root,
+            &["tools", "web", "search", "apiKey"],
+            Value::String(key),
+        )?;
+    }
     Ok(root != &before)
 }
 
@@ -368,7 +405,10 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
         .initial_value(&current_provider)
         .interact()?;
     let model = prompt_str("Transcription model", &current_model)?;
-    let language = prompt_str("Language (empty = auto-detect)", &current_language)?;
+    let language: String = input("Language (empty = auto-detect)")
+        .default_input(&current_language)
+        .required(false)
+        .interact()?;
     let max_bytes: u64 = input("Max audio bytes")
         .default_input(&current_max_bytes.to_string())
         .required(false)

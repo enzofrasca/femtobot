@@ -6,6 +6,7 @@ use crate::memory::smart::client::{ChatMessage, LlmClient};
 use crate::memory::smart::summarizer::ConversationSummarizer;
 use crate::memory::smart::vector_store::{EmbeddingService, VectorMemoryStore};
 use crate::session_compaction::SessionCompactor;
+use crate::skills::SkillManager;
 use crate::tools::ToolRegistry;
 use dashmap::DashMap;
 use rig::agent::Agent;
@@ -29,8 +30,9 @@ Tool availability (use exact names):
 - edit_file: Make precise edits to files
 - list_dir: List directory contents
 - exec: Run shell commands
-- web_search: Search the web (Brave API)
-- web_fetch: Fetch and extract readable content from a URL
+- web_search: Search the web (provider-configurable: Brave or Firecrawl)
+- web_fetch: Fetch/extract URL content (provider-configurable: direct HTTP or Firecrawl scrape)
+- activate_skill: Load full instructions for a skill from SKILL.md
 - manage_cron: Manage cron jobs and wake events (use for reminders; when scheduling a reminder, write the systemEvent text as something that will read like a reminder when it fires, and mention that it is a reminder depending on the time gap; include recent context in reminder text if appropriate)
 - send_message: Send messages and channel actions (use for proactive sends; replies auto-route to the source)
 
@@ -130,12 +132,24 @@ impl AgentLoop {
         // Build static preamble: system prompt + workspace context
         let workspace_path = cfg.workspace_dir.display();
         let memory_guidance = memory_guidance(&cfg.memory.mode, &workspace_path.to_string());
+        let skills_catalog =
+            SkillManager::from_workspace_dir(cfg.workspace_dir.as_path()).build_skills_catalog();
+        let skills_guidance = if skills_catalog.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "## Agent Skills\n\
+The following skills are available. When a task matches a listed skill, call `activate_skill` with the skill name before executing the task.\n\
+{skills_catalog}\n\n"
+            )
+        };
         let preamble = format!(
             "{SYSTEM_PROMPT}\n\n## Workspace\n\
             Your workspace is at: {workspace_path}\n\
             - Memory files: {workspace_path}/memory/MEMORY.md\n\
             - Daily notes: {workspace_path}/memory/YYYY-MM-DD.md\n\n\
-            {memory_guidance}"
+            {memory_guidance}\n\n\
+            {skills_guidance}"
         );
 
         // Build the runtime agents once.
@@ -552,6 +566,7 @@ fn build_runtime_agent_for_route(
                 .tool($tools.exec.clone())
                 .tool($tools.web_search.clone())
                 .tool($tools.web_fetch.clone())
+                .tool($tools.activate_skill.clone())
                 .tool($tools.cron.clone())
                 .tool($tools.send_message.clone())
                 .tool($tools.memory_search.clone())

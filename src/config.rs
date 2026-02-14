@@ -146,12 +146,31 @@ pub struct MemoryConfig {
     pub max_memories: usize,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WebSearchProvider {
+    Brave,
+    Firecrawl,
+}
+
+impl WebSearchProvider {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "brave" => Some(Self::Brave),
+            "firecrawl" => Some(Self::Firecrawl),
+            _ => None,
+        }
+    }
+}
+
 /// Tool-related settings (exec timeout, workspace restriction, web search).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolsConfig {
     pub exec_timeout_secs: u64,
     pub restrict_to_workspace: bool,
+    pub web_search_provider: WebSearchProvider,
     pub brave_api_key: Option<String>,
+    pub firecrawl_api_key: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -173,13 +192,7 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn load() -> Result<Self> {
-        let mut cfg = Self::defaults();
-
-        if let Some(femtobot) = load_femtobot_config() {
-            apply_femtobot_config(&mut cfg, &femtobot);
-        }
-
-        apply_env_overrides(&mut cfg);
+        let cfg = Self::load_relaxed();
 
         if cfg.provider_requires_api_key() && cfg.provider_api_key().trim().is_empty() {
             return Err(anyhow!(
@@ -190,6 +203,17 @@ impl AppConfig {
         }
 
         Ok(cfg)
+    }
+
+    pub fn load_relaxed() -> Self {
+        let mut cfg = Self::defaults();
+
+        if let Some(femtobot) = load_femtobot_config() {
+            apply_femtobot_config(&mut cfg, &femtobot);
+        }
+
+        apply_env_overrides(&mut cfg);
+        cfg
     }
 
     fn defaults() -> Self {
@@ -252,7 +276,9 @@ impl AppConfig {
             tools: ToolsConfig {
                 exec_timeout_secs: 60,
                 restrict_to_workspace: false,
+                web_search_provider: WebSearchProvider::Brave,
                 brave_api_key: None,
+                firecrawl_api_key: None,
             },
             data_dir: default_data_dir(),
             workspace_dir: default_workspace_dir(),
@@ -392,10 +418,31 @@ fn apply_femtobot_config(cfg: &mut AppConfig, value: &Value) {
     if let Some(restrict) = get_bool(value, &["tools", "restrict_to_workspace"]) {
         cfg.tools.restrict_to_workspace = restrict;
     }
-    if let Some(brave) = get_str(value, &["tools", "web", "search", "api_key"])
+    if let Some(provider) = get_str(value, &["tools", "web", "search", "provider"]) {
+        if let Some(parsed) = WebSearchProvider::parse(provider) {
+            cfg.tools.web_search_provider = parsed;
+        }
+    }
+    if let Some(legacy_key) = get_str(value, &["tools", "web", "search", "api_key"])
         .or_else(|| get_str(value, &["tools", "web", "search", "apiKey"]))
     {
+        let legacy_key = legacy_key.to_string();
+        cfg.tools.brave_api_key = Some(legacy_key.clone());
+        if cfg.tools.firecrawl_api_key.is_none()
+            && matches!(cfg.tools.web_search_provider, WebSearchProvider::Firecrawl)
+        {
+            cfg.tools.firecrawl_api_key = Some(legacy_key);
+        }
+    }
+    if let Some(brave) = get_str(value, &["tools", "web", "search", "brave_api_key"])
+        .or_else(|| get_str(value, &["tools", "web", "search", "braveApiKey"]))
+    {
         cfg.tools.brave_api_key = Some(brave.to_string());
+    }
+    if let Some(firecrawl) = get_str(value, &["tools", "web", "search", "firecrawl_api_key"])
+        .or_else(|| get_str(value, &["tools", "web", "search", "firecrawlApiKey"]))
+    {
+        cfg.tools.firecrawl_api_key = Some(firecrawl.to_string());
     }
     if let Some(token) = get_str(value, &["channels", "telegram", "token"]) {
         cfg.channels.telegram.bot_token = token.to_string();
@@ -646,8 +693,22 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
             .map(|s| s.to_string())
             .collect();
     }
+    if let Ok(provider) = std::env::var("FEMTOBOT_WEB_SEARCH_PROVIDER") {
+        if let Some(parsed) = WebSearchProvider::parse(&provider) {
+            cfg.tools.web_search_provider = parsed;
+        }
+    }
+    if let Ok(brave) = std::env::var("FEMTOBOT_BRAVE_API_KEY") {
+        cfg.tools.brave_api_key = Some(brave);
+    }
     if let Ok(brave) = std::env::var("BRAVE_API_KEY") {
         cfg.tools.brave_api_key = Some(brave);
+    }
+    if let Ok(firecrawl) = std::env::var("FEMTOBOT_FIRECRAWL_API_KEY") {
+        cfg.tools.firecrawl_api_key = Some(firecrawl);
+    }
+    if let Ok(firecrawl) = std::env::var("FIRECRAWL_API_KEY") {
+        cfg.tools.firecrawl_api_key = Some(firecrawl);
     }
     if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_ENABLED") {
         if let Some(flag) = parse_bool(&val) {

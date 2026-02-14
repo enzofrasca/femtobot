@@ -3,7 +3,9 @@ use crate::config::{AppConfig, MemoryMode};
 use crate::cron::CronService;
 use crate::memory::simple::file_store::MemoryStore;
 use crate::memory::smart::vector_store::VectorMemoryStore;
+use crate::skills::SkillManager;
 
+pub mod activate_skill;
 pub mod cron;
 pub mod fs;
 pub mod memory;
@@ -37,6 +39,7 @@ pub struct ToolRegistry {
     pub exec: shell::ExecTool,
     pub web_search: web::WebSearchTool,
     pub web_fetch: web::WebFetchTool,
+    pub activate_skill: activate_skill::ActivateSkillTool,
     pub cron: cron::CronTool,
     pub send_message: send::SendMessageTool,
     pub memory_search: memory::MemorySearchTool,
@@ -67,6 +70,7 @@ impl ToolRegistry {
                 .map(|store| memory::RememberTool::new_hybrid(store, memory_store.clone()))
                 .or_else(|| Some(memory::RememberTool::new_file(memory_store.clone()))),
         };
+        let skill_manager = SkillManager::from_workspace_dir(cfg.workspace_dir.as_path());
         Self {
             read_file: fs::ReadFileTool::new(allowed_dir.clone()),
             write_file: fs::WriteFileTool::new(allowed_dir.clone()),
@@ -77,8 +81,16 @@ impl ToolRegistry {
                 cfg.workspace_dir.clone(),
                 allowed_dir,
             ),
-            web_search: web::WebSearchTool::new(cfg.tools.brave_api_key.clone()),
-            web_fetch: web::WebFetchTool::new(),
+            web_search: web::WebSearchTool::new(
+                cfg.tools.web_search_provider.clone(),
+                cfg.tools.brave_api_key.clone(),
+                cfg.tools.firecrawl_api_key.clone(),
+            ),
+            web_fetch: web::WebFetchTool::new(
+                cfg.tools.web_search_provider.clone(),
+                cfg.tools.firecrawl_api_key.clone(),
+            ),
+            activate_skill: activate_skill::ActivateSkillTool::new(skill_manager),
             cron: cron::CronTool::new(cron_service),
             send_message: send::SendMessageTool::new(bus),
             memory_search,

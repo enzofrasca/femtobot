@@ -7,11 +7,14 @@ mod discord;
 mod memory;
 mod providers;
 mod session_compaction;
+mod skillhub;
+mod skills;
+mod skills_cli;
 mod telegram;
 mod tools;
 mod transcription;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use tokio::io::{self, AsyncBufReadExt};
 use tracing::{info, warn};
@@ -29,6 +32,10 @@ enum Commands {
     Run,
     Tui,
     Configure,
+    Skills {
+        #[command(subcommand)]
+        command: skills_cli::SkillsCommands,
+    },
     Cron {
         /// Admin cron operations (tool-driven scheduling is preferred)
         #[command(subcommand)]
@@ -55,6 +62,11 @@ async fn main() -> Result<()> {
         Commands::Run => run().await,
         Commands::Tui => run_tui().await,
         Commands::Configure => configure::run(),
+        Commands::Skills { command } => {
+            tokio::task::spawn_blocking(move || skills_cli::handle_skills(command))
+                .await
+                .map_err(|err| anyhow!("skills command task failed: {err}"))?
+        }
         Commands::Cron { command } => handle_cron(command).await,
     }
 }
