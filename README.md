@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./femtobot-logo.png" alt="femtobot" width="500">
+  <img src="./assets/femtobot-logo.png" alt="femtobot" width="500">
   <h1>femtobot: The Real Lightweight AI Assistant</h1>
   <p>
     <img src="https://img.shields.io/badge/language-Rust-orange" alt="Rust">
@@ -25,7 +25,7 @@ If you want agentic tooling, memory, and Telegram/Discord integration without a 
 ## 60-Second Quickstart
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/enzofrasca/femtobot/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/enzofrasca/femtobot/main/scripts/install.sh | bash
 femtobot configure
 femtobot
 ```
@@ -130,7 +130,7 @@ cargo build --release
 Cross-platform build script:
 
 ```bash
-./build.sh
+./scripts/build.sh
 ```
 
 ## Architecture
@@ -178,18 +178,25 @@ For `--from skills`, installs land in `./skills` under the workspace.
 ## Project Structure
 
 ```text
+assets/
+  femtobot-logo.png
+scripts/
+  build.sh
+  release.sh
+  install.sh
+  count_loc.sh
 src/
+  lib.rs          # Library crate root (app wiring / CLI runner)
   agent/          # Agent orchestration and core reasoning flow
+  channels/       # Channel adapters (Telegram, Discord)
   cron/           # Scheduling types and persistent schedule storage
   memory/         # Summary, vector/file stores, retrieval logic
+  skills/         # Skill manager, installer hub, and skills CLI commands
   tools/          # Tool implementations (fs, shell, web, send, cron)
   bus.rs          # Message bus for component coordination
   config.rs       # Config schema and loading
   configure.rs    # CLI setup flow for local configuration
-  skillhub.rs     # Native ClawHub/skills.sh/source integration
-  skills_cli.rs   # CLI wrapper for skill discovery and install
-  main.rs         # Application entrypoint and runtime wiring
-  telegram.rs     # Telegram channel integration
+  main.rs         # Thin binary entrypoint
   transcription.rs # Audio transcription integration
 ```
 

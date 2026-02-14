@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+
 if [[ -z "${GITHUB_TOKEN}" ]]; then
     echo "Error: GITHUB_TOKEN environment variable not set"
     echo "Get a token from: https://github.com/settings/tokens"
@@ -15,8 +19,8 @@ IS_PRERELEASE=false
 DIST_DIR="${DIST_DIR:-dist}"
 
 if [[ -z "${VERSION}" ]]; then
-    echo "Usage: ./release.sh <version>"
-    echo "Example: ./release.sh 0.1.0"
+    echo "Usage: ./scripts/release.sh <version>"
+    echo "Example: ./scripts/release.sh 0.1.0"
     exit 1
 fi
 
@@ -26,7 +30,7 @@ fi
 
 echo "Creating release v${VERSION} for ${REPO}..."
 
-./build.sh "${VERSION}"
+"${SCRIPT_DIR}/build.sh" "${VERSION}"
 
 echo ""
 echo "Generating SHA-256 checksums..."

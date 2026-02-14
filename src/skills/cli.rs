@@ -1,5 +1,5 @@
 use crate::config::AppConfig;
-use crate::skillhub::{
+use crate::skills::hub::{
     ClawhubInstallRequest, ClawhubSearchResult, InstalledSkill, Skillhub, SkillsShInstallRequest,
     SkillsShSearchResult, SkillsSourceInstallRequest, SourceSkill,
 };
