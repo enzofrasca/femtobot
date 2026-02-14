@@ -13,11 +13,15 @@ use serde_json::Value;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::memory::client::OpenRouterClient;
+use crate::memory::smart::client::LlmClient;
 use tokio::sync::Mutex as AsyncMutex;
 
 const MAX_CONTENT_LENGTH: usize = 8192;
 const MAX_CACHE_ENTRIES: usize = 512;
+/// Maximum number of rows to load during a vector search.
+/// Prevents unbounded full-table scans; the highest-priority/most-recent
+/// rows are returned first thanks to the composite index.
+const MAX_SEARCH_ROWS: usize = 500;
 
 static NAMESPACE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-]{1,64}$").unwrap());
@@ -42,18 +46,75 @@ const DEFAULT_PRIORITY_WEIGHT: f32 = 0.3;
 const DEFAULT_THRESHOLD: f32 = 0.0;
 
 #[derive(Clone)]
+struct CacheEntry {
+    embedding: Vec<f32>,
+    insert_order: u64,
+}
+
+#[derive(Clone)]
 pub struct EmbeddingService {
-    client: OpenRouterClient,
+    client: LlmClient,
     model: String,
-    cache: Arc<AsyncMutex<HashMap<String, Vec<f32>>>>,
+    cache: Arc<AsyncMutex<EmbeddingCache>>,
+}
+
+#[derive(Clone)]
+struct EmbeddingCache {
+    entries: HashMap<String, CacheEntry>,
+    counter: u64,
+}
+
+impl EmbeddingCache {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+            counter: 0,
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<&Vec<f32>> {
+        self.entries.get(key).map(|e| &e.embedding)
+    }
+
+    fn insert(&mut self, key: String, embedding: Vec<f32>) {
+        if self.entries.len() >= MAX_CACHE_ENTRIES {
+            self.evict_oldest_quarter();
+        }
+        self.counter += 1;
+        self.entries.insert(
+            key,
+            CacheEntry {
+                embedding,
+                insert_order: self.counter,
+            },
+        );
+    }
+
+    /// Evict the oldest 25% of entries by insertion order.
+    fn evict_oldest_quarter(&mut self) {
+        let to_remove = self.entries.len() / 4;
+        if to_remove == 0 {
+            self.entries.clear();
+            return;
+        }
+        let mut by_age: Vec<(String, u64)> = self
+            .entries
+            .iter()
+            .map(|(k, v)| (k.clone(), v.insert_order))
+            .collect();
+        by_age.sort_by_key(|(_, order)| *order);
+        for (key, _) in by_age.into_iter().take(to_remove) {
+            self.entries.remove(&key);
+        }
+    }
 }
 
 impl EmbeddingService {
-    pub fn new(client: OpenRouterClient, model: String) -> Self {
+    pub fn new(client: LlmClient, model: String) -> Self {
         Self {
             client,
             model,
-            cache: Arc::new(AsyncMutex::new(HashMap::new())),
+            cache: Arc::new(AsyncMutex::new(EmbeddingCache::new())),
         }
     }
 
@@ -68,9 +129,6 @@ impl EmbeddingService {
         drop(cache);
         let embedding = self.client.embeddings(&self.model, text).await?;
         let mut cache = self.cache.lock().await;
-        if cache.len() >= MAX_CACHE_ENTRIES {
-            cache.clear();
-        }
         cache.insert(text.to_string(), embedding.clone());
         Ok(embedding)
     }
@@ -125,6 +183,7 @@ impl VectorMemoryStore {
         content: &str,
         metadata: HashMap<String, Value>,
         namespace: Option<&str>,
+        precomputed_embedding: Option<Vec<f32>>,
     ) -> Result<MemoryItem> {
         let content = content.trim();
         if content.is_empty() {
@@ -134,7 +193,10 @@ impl VectorMemoryStore {
             return Err(anyhow!("content exceeds maximum length"));
         }
         let namespace = validate_namespace(namespace.unwrap_or(&self.namespace))?;
-        let embedding = self.embedder.embed(content).await?;
+        let embedding = match precomputed_embedding {
+            Some(e) if !e.is_empty() => e,
+            _ => self.embedder.embed(content).await?,
+        };
         let now = Utc::now();
         let memory_id = Uuid::new_v4().to_string();
         let embedding_blob = f32s_to_bytes(&embedding);
@@ -179,6 +241,7 @@ impl VectorMemoryStore {
         content: &str,
         metadata: HashMap<String, Value>,
         namespace: Option<&str>,
+        precomputed_embedding: Option<Vec<f32>>,
     ) -> Result<Option<MemoryItem>> {
         let content = content.trim();
         if content.is_empty() {
@@ -194,10 +257,15 @@ impl VectorMemoryStore {
             return Ok(None);
         };
 
-        let embedding = if content == existing.content {
-            existing.embedding.clone()
-        } else {
-            self.embedder.embed(content).await?
+        let embedding = match precomputed_embedding {
+            Some(e) if !e.is_empty() => e,
+            _ => {
+                if content == existing.content {
+                    existing.embedding.clone()
+                } else {
+                    self.embedder.embed(content).await?
+                }
+            }
         };
         let embedding_blob = f32s_to_bytes(&embedding);
         let now = Utc::now();
@@ -281,15 +349,60 @@ impl VectorMemoryStore {
         namespace: Option<&str>,
         priority_weight: f32,
     ) -> Result<Vec<(MemoryItem, f32)>> {
+        let (results, _embedding) = self
+            .search_with_embedding(query, top_k, threshold, namespace, priority_weight)
+            .await?;
+        Ok(results)
+    }
+
+    /// Like `search`, but also returns the query embedding so callers can
+    /// reuse it and avoid a redundant embedding API call.
+    pub async fn search_with_embedding(
+        &self,
+        query: &str,
+        top_k: usize,
+        threshold: f32,
+        namespace: Option<&str>,
+        priority_weight: f32,
+    ) -> Result<(Vec<(MemoryItem, f32)>, Vec<f32>)> {
         let namespace = validate_namespace(namespace.unwrap_or(&self.namespace))?;
         let query_embedding = self.embedder.embed(query).await?;
+        let results = self
+            .search_inner(
+                query_embedding.clone(),
+                top_k,
+                threshold,
+                namespace,
+                priority_weight,
+            )
+            .await?;
+        Ok((results, query_embedding))
+    }
+
+    /// Shared search implementation used by both `search()` and `VectorStoreIndex::top_n()`.
+    /// Returns `(MemoryItem, similarity_score)` pairs sorted by combined score.
+    /// Also bumps `access_count` for the returned memories.
+    ///
+    /// Rows are capped at `MAX_SEARCH_ROWS` to avoid unbounded full-table scans.
+    async fn search_inner(
+        &self,
+        query_embedding: Vec<f32>,
+        top_k: usize,
+        threshold: f32,
+        namespace: String,
+        priority_weight: f32,
+    ) -> Result<Vec<(MemoryItem, f32)>> {
         let ns = namespace;
+        let row_limit = MAX_SEARCH_ROWS;
 
         self.with_conn(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, content, embedding, metadata, created_at, updated_at, access_count, priority, namespace FROM memories WHERE namespace = ?1",
+                "SELECT id, content, embedding, metadata, created_at, updated_at, access_count, priority, namespace \
+                 FROM memories WHERE namespace = ?1 \
+                 ORDER BY priority DESC, updated_at DESC \
+                 LIMIT ?2",
             )?;
-            let rows = stmt.query_map(params![ns], parse_memory_row)?;
+            let rows = stmt.query_map(params![ns, row_limit as i64], parse_memory_row)?;
 
             let mut results: Vec<(MemoryItem, f32, f32)> = Vec::new();
             for row in rows {
@@ -302,11 +415,20 @@ impl VectorMemoryStore {
             }
 
             results.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-            let trimmed = results
+            let trimmed: Vec<(MemoryItem, f32)> = results
                 .into_iter()
                 .take(top_k)
                 .map(|(item, sim, _)| (item, sim))
                 .collect();
+
+            // Bump access_count for all returned memories.
+            for (item, _) in &trimmed {
+                let _ = conn.execute(
+                    "UPDATE memories SET access_count = access_count + 1 WHERE id = ?1 AND namespace = ?2",
+                    params![item.id, item.namespace],
+                );
+            }
+
             Ok(trimmed)
         }).await
     }
@@ -369,6 +491,12 @@ fn init_db(conn: &Connection) -> Result<()> {
     )?;
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories(namespace)",
+        [],
+    )?;
+    // Composite index used by search_inner (ORDER BY priority DESC, updated_at DESC)
+    // and prune_if_needed (ORDER BY priority ASC, updated_at ASC).
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memories_ns_priority ON memories(namespace, priority DESC, updated_at DESC)",
         [],
     )?;
     Ok(())
@@ -439,7 +567,7 @@ fn bytes_to_f32s(bytes: &[u8]) -> Vec<f32> {
 }
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.is_empty() || b.is_empty() {
+    if a.is_empty() || b.is_empty() || a.len() != b.len() {
         return 0.0;
     }
     let mut dot = 0.0;
@@ -454,6 +582,25 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         0.0
     } else {
         dot / (norm_a.sqrt() * norm_b.sqrt())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cosine_similarity;
+
+    #[test]
+    fn cosine_similarity_handles_dimension_mismatch() {
+        let a = vec![1.0_f32, 2.0, 3.0];
+        let b = vec![1.0_f32, 2.0];
+        assert_eq!(cosine_similarity(&a, &b), 0.0);
+    }
+
+    #[test]
+    fn cosine_similarity_is_one_for_identical_vectors() {
+        let v = vec![0.2_f32, 0.5, 0.9];
+        let sim = cosine_similarity(&v, &v);
+        assert!((sim - 1.0).abs() < 1e-6);
     }
 }
 
@@ -550,12 +697,10 @@ impl VectorStoreIndex for VectorMemoryStore {
                 None => (None, DEFAULT_PRIORITY_WEIGHT),
             };
 
-            // Use filter namespace or fall back to the store's default
             let namespace = filter_ns.unwrap_or_else(|| self.namespace.clone());
             let namespace = validate_namespace(&namespace)
                 .map_err(|e| VectorStoreError::DatastoreError(e.into()))?;
 
-            // Embed the query
             let query_embedding = match self.embedder.embed(&query_text).await {
                 Ok(embedding) => embedding,
                 Err(err) => {
@@ -567,30 +712,14 @@ impl VectorStoreIndex for VectorMemoryStore {
                 }
             };
 
-            let ns = namespace.clone();
-            let scored_items = match self.with_conn(move |conn| {
-                    let mut stmt = conn.prepare(
-                        "SELECT id, content, embedding, metadata, created_at, updated_at, access_count, priority, namespace FROM memories WHERE namespace = ?1",
-                    )?;
-                    let rows = stmt.query_map(params![ns], parse_memory_row)?;
-
-                    let mut results: Vec<(MemoryItem, f32)> = Vec::new();
-                    for row in rows {
-                        let item = row?;
-                        let similarity = cosine_similarity(&query_embedding, &item.embedding);
-                        if similarity >= threshold {
-                            let combined = similarity * (1.0 - priority_weight)
-                                + item.priority * priority_weight;
-                            results.push((item, combined));
-                        }
-                    }
-
-                    results
-                        .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                    let trimmed: Vec<(MemoryItem, f32)> =
-                        results.into_iter().take(samples).collect();
-                    Ok(trimmed)
-                })
+            let scored_items = match self
+                .search_inner(
+                    query_embedding,
+                    samples,
+                    threshold,
+                    namespace.clone(),
+                    priority_weight,
+                )
                 .await
             {
                 Ok(items) => items,
@@ -603,8 +732,6 @@ impl VectorStoreIndex for VectorMemoryStore {
                 }
             };
 
-            // Convert each MemoryItem to (score, id, T) by serializing to JSON
-            // then deserializing to the caller's expected type.
             let mut out = Vec::with_capacity(scored_items.len());
             for (item, score) in scored_items {
                 let id = item.id.clone();

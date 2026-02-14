@@ -1,3 +1,4 @@
+use crate::tools::fs;
 use crate::tools::ToolError;
 use regex::Regex;
 use rig::completion::request::ToolDefinition;
@@ -68,14 +69,17 @@ pub struct ExecTool {
     guard: ShellGuard,
     timeout_secs: u64,
     working_dir: PathBuf,
+    /// When set, working_dir arg must resolve to a path under this directory.
+    allowed_dir: Option<PathBuf>,
 }
 
 impl ExecTool {
-    pub fn new(timeout_secs: u64, working_dir: PathBuf) -> Self {
+    pub fn new(timeout_secs: u64, working_dir: PathBuf, allowed_dir: Option<PathBuf>) -> Self {
         Self {
             guard: ShellGuard::new(),
             timeout_secs,
             working_dir,
+            allowed_dir,
         }
     }
 }
@@ -156,10 +160,11 @@ impl Tool for ExecTool {
         async move {
             self.guard.check(&args.command).map_err(ToolError::msg)?;
 
-            let cwd = args
-                .working_dir
-                .map(PathBuf::from)
-                .unwrap_or_else(|| self.working_dir.clone());
+            let cwd = match args.working_dir.as_deref() {
+                Some(s) => fs::resolve_path(s, self.allowed_dir.as_deref(), true)
+                    .map_err(ToolError::msg)?,
+                None => self.working_dir.clone(),
+            };
 
             let (mut cmd, fallback) = build_shell_command(&args.command, &cwd)?;
 

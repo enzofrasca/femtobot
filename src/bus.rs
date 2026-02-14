@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex};
+use tracing::warn;
 
 #[derive(Clone, Debug)]
 pub struct InboundMessage {
@@ -41,7 +42,9 @@ impl MessageBus {
 
         tokio::spawn(async move {
             while let Some(msg) = outbound_rx.recv().await {
-                let _ = outbound_broadcast_tx.send(msg);
+                if let Err(e) = outbound_broadcast_tx.send(msg) {
+                    warn!("Failed to broadcast outbound message: {e}");
+                }
             }
         });
 
@@ -49,11 +52,15 @@ impl MessageBus {
     }
 
     pub async fn publish_inbound(&self, msg: InboundMessage) {
-        let _ = self.inbound_tx.send(msg).await;
+        if let Err(e) = self.inbound_tx.send(msg).await {
+            warn!("Failed to publish inbound message: {e}");
+        }
     }
 
     pub async fn publish_outbound(&self, msg: OutboundMessage) {
-        let _ = self.outbound_tx.send(msg).await;
+        if let Err(e) = self.outbound_tx.send(msg).await {
+            warn!("Failed to publish outbound message: {e}");
+        }
     }
 
     pub async fn consume_inbound(&self) -> Option<InboundMessage> {

@@ -5,6 +5,7 @@ mod configure;
 mod cron;
 mod discord;
 mod memory;
+mod providers;
 mod session_compaction;
 mod telegram;
 mod tools;

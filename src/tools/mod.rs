@@ -1,9 +1,12 @@
 use crate::bus::MessageBus;
-use crate::config::AppConfig;
+use crate::config::{AppConfig, MemoryMode};
 use crate::cron::CronService;
+use crate::memory::simple::file_store::MemoryStore;
+use crate::memory::smart::vector_store::VectorMemoryStore;
 
 pub mod cron;
 pub mod fs;
+pub mod memory;
 pub mod send;
 pub mod shell;
 pub mod web;
@@ -36,25 +39,51 @@ pub struct ToolRegistry {
     pub web_fetch: web::WebFetchTool,
     pub cron: cron::CronTool,
     pub send_message: send::SendMessageTool,
+    pub memory_search: memory::MemorySearchTool,
+    pub memory_get: memory::MemoryGetTool,
+    pub remember: Option<memory::RememberTool>,
 }
 
 impl ToolRegistry {
-    pub fn new(cfg: AppConfig, cron_service: CronService, bus: MessageBus) -> Self {
-        let allowed_dir = if cfg.restrict_to_workspace {
+    pub fn new(
+        cfg: AppConfig,
+        cron_service: CronService,
+        bus: MessageBus,
+        memory_store: MemoryStore,
+        vector_store: Option<VectorMemoryStore>,
+    ) -> Self {
+        let allowed_dir = if cfg.tools.restrict_to_workspace {
             Some(cfg.workspace_dir.clone())
         } else {
             None
+        };
+        let memory_search =
+            memory::MemorySearchTool::new(memory_store.clone(), vector_store.clone());
+        let memory_get = memory::MemoryGetTool::new(memory_store.clone());
+        let remember = match cfg.memory.mode {
+            MemoryMode::None => None,
+            MemoryMode::Simple => Some(memory::RememberTool::new_file(memory_store.clone())),
+            MemoryMode::Smart => vector_store
+                .map(memory::RememberTool::new_vector)
+                .or_else(|| Some(memory::RememberTool::new_file(memory_store.clone()))),
         };
         Self {
             read_file: fs::ReadFileTool::new(allowed_dir.clone()),
             write_file: fs::WriteFileTool::new(allowed_dir.clone()),
             edit_file: fs::EditFileTool::new(allowed_dir.clone()),
-            list_dir: fs::ListDirTool::new(allowed_dir),
-            exec: shell::ExecTool::new(cfg.exec_timeout_secs, cfg.workspace_dir.clone()),
-            web_search: web::WebSearchTool::new(cfg.brave_api_key.clone()),
+            list_dir: fs::ListDirTool::new(allowed_dir.clone()),
+            exec: shell::ExecTool::new(
+                cfg.tools.exec_timeout_secs,
+                cfg.workspace_dir.clone(),
+                allowed_dir,
+            ),
+            web_search: web::WebSearchTool::new(cfg.tools.brave_api_key.clone()),
             web_fetch: web::WebFetchTool::new(),
             cron: cron::CronTool::new(cron_service),
             send_message: send::SendMessageTool::new(bus),
+            memory_search,
+            memory_get,
+            remember,
         }
     }
 }

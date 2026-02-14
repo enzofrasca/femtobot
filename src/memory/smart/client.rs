@@ -6,13 +6,13 @@ use serde_json::Value;
 use crate::config::{AppConfig, ProviderKind};
 
 #[derive(Clone)]
-pub struct OpenRouterClient {
+pub struct LlmClient {
     http: reqwest::Client,
     base_url: String,
     headers: HeaderMap,
 }
 
-impl OpenRouterClient {
+impl LlmClient {
     pub fn new(
         api_key: String,
         base_url: String,
@@ -58,25 +58,25 @@ impl OpenRouterClient {
     pub fn from_config(cfg: &AppConfig) -> Result<Self> {
         match cfg.provider {
             ProviderKind::OpenRouter => Self::new(
-                cfg.openrouter_api_key.clone(),
-                cfg.openrouter_base_url.clone(),
-                cfg.openrouter_http_referer.clone(),
-                cfg.openrouter_app_title.clone(),
-                cfg.openrouter_extra_headers.clone(),
+                cfg.providers.openrouter.api_key.clone(),
+                cfg.providers.openrouter.base_url.clone(),
+                cfg.providers.openrouter.http_referer.clone(),
+                cfg.providers.openrouter.app_title.clone(),
+                cfg.providers.openrouter.extra_headers.clone(),
             ),
             ProviderKind::OpenAI => Self::new(
-                cfg.openai_api_key.clone(),
-                cfg.openai_base_url.clone(),
+                cfg.providers.openai.api_key.clone(),
+                cfg.providers.openai.base_url.clone(),
                 None,
                 None,
-                cfg.openai_extra_headers.clone(),
+                cfg.providers.openai.extra_headers.clone(),
             ),
             ProviderKind::Ollama => Self::new_optional_key(
-                cfg.ollama_api_key.clone(),
-                cfg.ollama_base_url.clone(),
+                cfg.providers.ollama.api_key.clone(),
+                cfg.providers.ollama.base_url.clone(),
                 None,
                 None,
-                cfg.ollama_extra_headers.clone(),
+                cfg.providers.ollama.extra_headers.clone(),
             ),
         }
     }

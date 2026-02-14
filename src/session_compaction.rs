@@ -1,7 +1,25 @@
 use tracing::debug;
 
-use crate::memory::client::ChatMessage;
-use crate::memory::extractor::extract_facts_from_messages;
+use crate::memory::smart::client::ChatMessage;
+
+const FACT_KEYWORDS: &[&str] = &[
+    "my name is",
+    "i am",
+    "i'm",
+    "i work",
+    "i live",
+    "i prefer",
+    "remember that",
+    "note that",
+    "important:",
+    "email:",
+    "phone:",
+    "address:",
+    "birthday:",
+    "project uses",
+    "using",
+    "configured to",
+];
 
 #[derive(Clone, Debug)]
 pub struct CompactionConfig {
@@ -157,4 +175,34 @@ impl SessionCompactor {
             parts.join("\n")
         }
     }
+}
+
+fn extract_facts_from_messages(messages: &[ChatMessage], max_facts: usize) -> Vec<String> {
+    let mut facts = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for msg in messages {
+        if msg.role == "system" {
+            continue;
+        }
+        for line in msg.content.lines() {
+            let line = line.trim();
+            if line.len() < 10 {
+                continue;
+            }
+            if FACT_KEYWORDS
+                .iter()
+                .any(|kw| line.to_ascii_lowercase().contains(kw))
+            {
+                let fact = line.chars().take(200).collect::<String>();
+                if seen.insert(fact.clone()) {
+                    facts.push(fact);
+                    if facts.len() >= max_facts {
+                        return facts;
+                    }
+                }
+            }
+        }
+    }
+    facts
 }

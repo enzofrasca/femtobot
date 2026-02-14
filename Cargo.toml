@@ -22,10 +22,12 @@ teloxide = { version = "0.17", default-features = false, features = ["macros", "
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "model", "cache", "rustls_backend"] }
 url = "2"
 clap = { version = "4", features = ["derive"] }
+cliclack = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 
 # Optional for cron
 cron = "0.12"
+dashmap = "6"
 # tokio-cron-scheduler = "0.11"

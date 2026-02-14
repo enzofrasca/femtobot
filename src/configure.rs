@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
+use cliclack::{confirm, input, intro, log, outro, outro_cancel, password, select};
 use serde_json::{Map, Value};
 use std::fs;
-use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process;
 
@@ -11,106 +11,173 @@ pub fn run() -> Result<()> {
     let initial_root = root.clone();
     let mut dirty = false;
 
-    println!("femtobot configure");
-    println!("Config path: {}", path.display());
-    println!();
+    intro("femtobot configure")?;
+    log::info(&format!("Config path: {}", path.display()))?;
 
     loop {
-        println!("Menu:");
-        println!("1. Configure provider (OpenRouter/OpenAI/Ollama)");
-        println!("2. Configure model");
-        println!("3. Configure Telegram");
-        println!("4. Configure Discord");
-        println!("5. Configure web search (Brave)");
-        println!("6. Configure transcription");
-        println!("7. Show config path");
-        println!("8. Save and exit");
-        println!("9. Exit without saving");
-        print!("Select an option: ");
-        io::stdout().flush()?;
+        let action = select("What would you like to configure?")
+            .item(
+                MenuAction::Provider,
+                "Provider",
+                "LLM API provider and keys",
+            )
+            .item(MenuAction::Model, "Model", "Default model and fallbacks")
+            .item(MenuAction::Channels, "Channels", "Telegram, Discord")
+            .item(
+                MenuAction::WebSearch,
+                "Web search (Brave)",
+                "Brave Search API key",
+            )
+            .item(
+                MenuAction::Transcription,
+                "Transcription",
+                "Voice/audio transcription settings",
+            )
+            .item(
+                MenuAction::Memory,
+                "Memory",
+                "Memory mode and extraction settings",
+            )
+            .item(MenuAction::ShowPath, "Show config path", "")
+            .item(MenuAction::SaveAndExit, "Save and exit", "")
+            .item(MenuAction::ExitWithoutSaving, "Exit without saving", "")
+            .interact()?;
 
-        let choice = read_line()?.trim().to_string();
-        println!();
-
-        match choice.as_str() {
-            "1" => {
-                let _ = configure_provider(&mut root)?;
+        match action {
+            MenuAction::Provider => {
+                configure_provider(&mut root)?;
                 dirty = root != initial_root;
             }
-            "2" => {
-                let _ = configure_model(&mut root)?;
+            MenuAction::Model => {
+                configure_model(&mut root)?;
                 dirty = root != initial_root;
             }
-            "3" => {
-                let _ = configure_telegram(&mut root)?;
+            MenuAction::Channels => {
+                let channel = select("Which channel?")
+                    .item(
+                        ChannelChoice::Telegram,
+                        "Telegram",
+                        "Bot token and allowed users",
+                    )
+                    .item(ChannelChoice::Discord, "Discord", "Bot token and channels")
+                    .interact()?;
+                match channel {
+                    ChannelChoice::Telegram => configure_telegram(&mut root),
+                    ChannelChoice::Discord => configure_discord(&mut root),
+                }?;
                 dirty = root != initial_root;
             }
-            "4" => {
-                let _ = configure_discord(&mut root)?;
+            MenuAction::WebSearch => {
+                configure_web_search(&mut root)?;
                 dirty = root != initial_root;
             }
-            "5" => {
-                let _ = configure_web_search(&mut root)?;
+            MenuAction::Transcription => {
+                configure_transcription(&mut root)?;
                 dirty = root != initial_root;
             }
-            "6" => {
-                let _ = configure_transcription(&mut root)?;
+            MenuAction::Memory => {
+                configure_memory(&mut root)?;
                 dirty = root != initial_root;
             }
-            "7" => {
-                println!("Config path: {}", path.display());
+            MenuAction::ShowPath => {
+                log::info(&format!("Config path: {}", path.display()))?;
             }
-            "8" => {
+            MenuAction::SaveAndExit => {
                 if dirty {
                     print_change_summary(&initial_root, &root);
                     save_config_value(&path, &root)?;
-                    println!("Saved.");
+                    outro("Configuration saved.")?;
                 } else {
-                    println!("No changes to save.");
+                    outro("No changes to save.")?;
                 }
                 break;
             }
-            "9" | "q" | "Q" => {
+            MenuAction::ExitWithoutSaving => {
                 if dirty {
-                    println!("Exited without saving.");
+                    outro_cancel("Exited without saving.")?;
+                } else {
+                    outro("No changes to save.")?;
                 }
                 break;
-            }
-            _ => {
-                println!("Invalid option.");
             }
         }
-        println!();
     }
 
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MenuAction {
+    Provider,
+    Model,
+    Channels,
+    WebSearch,
+    Transcription,
+    Memory,
+    ShowPath,
+    SaveAndExit,
+    ExitWithoutSaving,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ChannelChoice {
+    Telegram,
+    Discord,
+}
+
+fn prompt_str(label: &str, current: &str) -> Result<String> {
+    let mut prompt = input(label);
+    if !current.trim().is_empty() {
+        prompt = prompt.default_input(current).required(false);
+    }
+    Ok(prompt.interact()?)
+}
+
+fn prompt_secret(label: &str, current: &str) -> Result<String> {
+    let prompt_label = if current.trim().is_empty() {
+        label.to_string()
+    } else {
+        format!("{label} (press Enter to keep current)")
+    };
+    let mut p = password(&prompt_label);
+    if !current.trim().is_empty() {
+        p = p.allow_empty();
+    }
+    let result = p.interact()?;
+    Ok(if result.trim().is_empty() && !current.trim().is_empty() {
+        current.to_string()
+    } else {
+        result
+    })
+}
+
 fn configure_provider(root: &mut Value) -> Result<bool> {
     let before = root.clone();
-    let current_provider =
-        get_str_at(root, &["agents", "defaults", "provider"]).unwrap_or("openrouter");
-    let provider = prompt_enum_with_current(
-        "Active provider (openrouter/openai/ollama)",
-        current_provider,
-        &["openrouter", "openai", "ollama"],
-    )?;
-    let normalized = provider;
+    let current_provider = get_str_at(root, &["agents", "defaults", "provider"])
+        .unwrap_or("openrouter")
+        .to_string();
+
+    let provider = select("Active provider")
+        .item("openrouter", "OpenRouter", "openrouter.ai")
+        .item("openai", "OpenAI", "api.openai.com")
+        .item("ollama", "Ollama", "local")
+        .initial_value(&current_provider)
+        .interact()?;
 
     set_path(
         root,
         &["agents", "defaults", "provider"],
-        Value::String(normalized.clone()),
+        Value::String(provider.to_string()),
     )?;
 
-    match normalized.as_str() {
+    match provider {
         "openrouter" => {
             let current_key =
                 get_str_at(root, &["providers", "openrouter", "apiKey"]).unwrap_or("");
             let current_base = get_str_at(root, &["providers", "openrouter", "apiBase"])
                 .unwrap_or("https://openrouter.ai/api/v1");
             let key = prompt_secret("OpenRouter API key", current_key)?;
-            let base = prompt_with_current("OpenRouter base URL", current_base)?;
+            let base = prompt_str("OpenRouter base URL", current_base)?;
             set_path(
                 root,
                 &["providers", "openrouter", "apiKey"],
@@ -127,7 +194,7 @@ fn configure_provider(root: &mut Value) -> Result<bool> {
             let current_base = get_str_at(root, &["providers", "openai", "apiBase"])
                 .unwrap_or("https://api.openai.com/v1");
             let key = prompt_secret("OpenAI API key", current_key)?;
-            let base = prompt_with_current("OpenAI base URL", current_base)?;
+            let base = prompt_str("OpenAI base URL", current_base)?;
             set_path(root, &["providers", "openai", "apiKey"], Value::String(key))?;
             set_path(
                 root,
@@ -140,7 +207,7 @@ fn configure_provider(root: &mut Value) -> Result<bool> {
             let current_base = get_str_at(root, &["providers", "ollama", "apiBase"])
                 .unwrap_or("http://127.0.0.1:11434/v1");
             let key = prompt_secret("Ollama API key (optional)", current_key)?;
-            let base = prompt_with_current("Ollama base URL", current_base)?;
+            let base = prompt_str("Ollama base URL", current_base)?;
             set_path(root, &["providers", "ollama", "apiKey"], Value::String(key))?;
             set_path(
                 root,
@@ -158,28 +225,15 @@ fn configure_telegram(root: &mut Value) -> Result<bool> {
     let before = root.clone();
     let current_token = get_str_at(root, &["channels", "telegram", "token"]).unwrap_or("");
     let current_allow = get_array_at(root, &["channels", "telegram", "allow_from"]);
-    let current_allow_str = if current_allow.is_empty() {
-        String::new()
-    } else {
-        current_allow.join(",")
-    };
+    let current_allow_str = current_allow.join(",");
 
     let token = prompt_secret("Telegram bot token", current_token)?;
-    let allow_from = prompt_with_current(
+    let allow_from = prompt_str(
         "Allowed Telegram user IDs (comma separated)",
         &current_allow_str,
     )?;
 
-    let allow_list = if allow_from.trim().is_empty() {
-        current_allow
-    } else {
-        allow_from
-            .split(',')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-    };
+    let allow_list = parse_comma_list(&allow_from, &current_allow);
 
     set_path(
         root,
@@ -199,48 +253,22 @@ fn configure_discord(root: &mut Value) -> Result<bool> {
     let before = root.clone();
     let current_token = get_str_at(root, &["channels", "discord", "token"]).unwrap_or("");
     let current_allow = get_array_at(root, &["channels", "discord", "allow_from"]);
-    let current_allow_str = if current_allow.is_empty() {
-        String::new()
-    } else {
-        current_allow.join(",")
-    };
+    let current_allow_str = current_allow.join(",");
     let current_channels = get_array_at(root, &["channels", "discord", "allowed_channels"]);
-    let current_channels_str = if current_channels.is_empty() {
-        String::new()
-    } else {
-        current_channels.join(",")
-    };
+    let current_channels_str = current_channels.join(",");
 
     let token = prompt_secret("Discord bot token", current_token)?;
-    let allow_from = prompt_with_current(
+    let allow_from = prompt_str(
         "Allowed Discord users (IDs/usernames, comma separated)",
         &current_allow_str,
     )?;
-    let allowed_channels = prompt_with_current(
-        "Allowed Discord channel IDs for guild messages (comma separated, blank = all)",
+    let allowed_channels = prompt_str(
+        "Allowed Discord channel IDs (comma separated, blank = all)",
         &current_channels_str,
     )?;
 
-    let allow_list = if allow_from.trim().is_empty() {
-        current_allow
-    } else {
-        allow_from
-            .split(',')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-    };
-    let channel_list = if allowed_channels.trim().is_empty() {
-        current_channels
-    } else {
-        allowed_channels
-            .split(',')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-    };
+    let allow_list = parse_comma_list(&allow_from, &current_allow);
+    let channel_list = parse_comma_list(&allowed_channels, &current_channels);
 
     set_path(
         root,
@@ -266,27 +294,11 @@ fn configure_model(root: &mut Value) -> Result<bool> {
     let current_model =
         get_str_at(root, &["agents", "defaults", "model"]).unwrap_or("anthropic/claude-opus-4-5");
     let current_fallbacks = get_array_at(root, &["agents", "defaults", "model_fallbacks"]);
-    let current_fallbacks_str = if current_fallbacks.is_empty() {
-        String::new()
-    } else {
-        current_fallbacks.join(",")
-    };
-    let model = prompt_with_current("Default model", current_model)?;
-    let fallbacks = prompt_with_current(
-        "Fallback models (comma separated, e.g. openrouter/anthropic/claude-sonnet-4-5,openai/gpt-4o-mini)",
-        &current_fallbacks_str,
-    )?;
+    let current_fallbacks_str = current_fallbacks.join(",");
 
-    let fallback_list = if fallbacks.trim().is_empty() {
-        current_fallbacks
-    } else {
-        fallbacks
-            .split(',')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-    };
+    let model = prompt_str("Default model", current_model)?;
+    let fallbacks = prompt_str("Fallback models (comma separated)", &current_fallbacks_str)?;
+    let fallback_list = parse_comma_list(&fallbacks, &current_fallbacks);
 
     set_path(root, &["agents", "defaults", "model"], Value::String(model))?;
     set_path(
@@ -294,6 +306,7 @@ fn configure_model(root: &mut Value) -> Result<bool> {
         &["agents", "defaults", "model_fallbacks"],
         Value::Array(fallback_list.into_iter().map(Value::String).collect()),
     )?;
+
     Ok(root != &before)
 }
 
@@ -344,25 +357,27 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
             "timestamp_granularities",
         ],
     );
-    let current_grans_str = if current_grans.is_empty() {
-        String::new()
-    } else {
-        current_grans.join(",")
-    };
+    let current_grans_str = current_grans.join(",");
 
-    let enabled = prompt_bool_with_current("Enable transcription (true/false)", current_enabled)?;
-    let provider = prompt_enum_with_current(
-        "Transcription provider (openai/mistral)",
-        &current_provider,
-        &["openai", "mistral"],
-    )?;
-
-    let model = prompt_with_current("Transcription model", &current_model)?;
-    let language = prompt_with_current(
-        "Transcription language (empty = auto-detect)",
-        &current_language,
-    )?;
-    let max_bytes = prompt_u64_with_current("Max audio bytes", current_max_bytes)?;
+    let enabled = confirm("Enable transcription")
+        .initial_value(current_enabled)
+        .interact()?;
+    let provider = select("Transcription provider")
+        .item("openai", "OpenAI", "whisper")
+        .item("mistral", "Mistral", "")
+        .initial_value(&current_provider)
+        .interact()?;
+    let model = prompt_str("Transcription model", &current_model)?;
+    let language = prompt_str("Language (empty = auto-detect)", &current_language)?;
+    let max_bytes: u64 = input("Max audio bytes")
+        .default_input(&current_max_bytes.to_string())
+        .required(false)
+        .validate(|s: &String| {
+            s.parse::<u64>()
+                .map_err(|_| "Enter a non-negative integer".to_string())
+                .map(|_| ())
+        })
+        .interact()?;
 
     set_path(
         root,
@@ -372,7 +387,7 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
     set_path(
         root,
         &["channels", "telegram", "transcription", "provider"],
-        Value::String(provider.clone()),
+        Value::String(provider.to_string()),
     )?;
     set_path(
         root,
@@ -411,25 +426,18 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
     )?;
 
     if provider == "mistral" {
-        let diarize = prompt_bool_with_current("Enable diarization (true/false)", current_diarize)?;
-        let context_bias = prompt_with_current(
+        let diarize = confirm("Enable diarization")
+            .initial_value(current_diarize)
+            .interact()?;
+        let context_bias = prompt_str(
             "Context bias (comma-separated terms)",
             &current_context_bias,
         )?;
-        let grans_raw = prompt_with_current(
-            "Timestamp granularities (comma-separated e.g. segment,word)",
+        let grans_raw = prompt_str(
+            "Timestamp granularities (e.g. segment,word)",
             &current_grans_str,
         )?;
-        let grans = if grans_raw.trim().is_empty() {
-            current_grans
-        } else {
-            grans_raw
-                .split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>()
-        };
+        let grans = parse_comma_list(&grans_raw, &current_grans);
         set_path(
             root,
             &["channels", "telegram", "transcription", "diarize"],
@@ -455,7 +463,7 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
         let current_base = get_str_at(root, &["providers", "mistral", "apiBase"])
             .unwrap_or("https://api.mistral.ai/v1");
         let key = prompt_secret("Mistral API key", current_key)?;
-        let base = prompt_with_current("Mistral base URL", current_base)?;
+        let base = prompt_str("Mistral base URL", current_base)?;
         set_path(
             root,
             &["providers", "mistral", "apiKey"],
@@ -469,6 +477,78 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
     }
 
     Ok(root != &before)
+}
+
+fn configure_memory(root: &mut Value) -> Result<bool> {
+    let before = root.clone();
+    let current_mode = get_str_at(root, &["memory", "mode"])
+        .unwrap_or("simple")
+        .to_string();
+
+    let current_embedding_model = get_str_at(root, &["memory", "embedding_model"])
+        .unwrap_or("text-embedding-3-small")
+        .to_string();
+    let current_max_memories = get_u64_at(root, &["memory", "max_memories"]).unwrap_or(1000);
+    let mode: &str = select("Memory mode")
+        .item("none", "Disabled", "No memory")
+        .item(
+            "simple",
+            "Simple",
+            "File-based (MEMORY.md), no embeddings needed",
+        )
+        .item(
+            "smart",
+            "Smart (Rig-style)",
+            "Periodic summary memory + vector retrieval, requires embeddings",
+        )
+        .initial_value(&current_mode)
+        .interact()?;
+
+    set_path(root, &["memory", "mode"], Value::String(mode.to_string()))?;
+
+    if mode == "smart" {
+        let embedding_model = prompt_str("Embedding model", &current_embedding_model)?;
+        set_path(
+            root,
+            &["memory", "embedding_model"],
+            Value::String(embedding_model),
+        )?;
+
+        let max_memories: u64 = input("Max memories in vector store")
+            .default_input(&current_max_memories.to_string())
+            .required(false)
+            .validate(|s: &String| {
+                s.parse::<u64>()
+                    .map_err(|_| "Enter a positive integer".to_string())
+                    .and_then(|n| {
+                        if n == 0 {
+                            Err("Must be at least 1".to_string())
+                        } else {
+                            Ok(())
+                        }
+                    })
+            })
+            .interact()?;
+        set_path(
+            root,
+            &["memory", "max_memories"],
+            Value::Number(serde_json::Number::from(max_memories)),
+        )?;
+    }
+
+    Ok(root != &before)
+}
+
+fn parse_comma_list(input: &str, fallback: &[String]) -> Vec<String> {
+    if input.trim().is_empty() {
+        return fallback.to_vec();
+    }
+    input
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
 }
 
 fn load_config_value(path: &PathBuf) -> Result<Value> {
@@ -507,77 +587,6 @@ fn save_config_value(path: &PathBuf, value: &Value) -> Result<()> {
     fs::write(&tmp_path, content)?;
     fs::rename(&tmp_path, path)?;
     Ok(())
-}
-
-fn prompt_with_current(label: &str, current: &str) -> Result<String> {
-    prompt_with_options(label, current, false)
-}
-
-fn prompt_secret(label: &str, current: &str) -> Result<String> {
-    prompt_with_options(label, current, true)
-}
-
-fn prompt_with_options(label: &str, current: &str, secret: bool) -> Result<String> {
-    match (secret, current.trim().is_empty()) {
-        (true, true) => print!("{label}: "),
-        (true, false) => print!("{label} [set]: "),
-        (false, true) => print!("{label}: "),
-        (false, false) => print!("{label} [{current}]: "),
-    }
-    io::stdout().flush()?;
-    let input = read_line()?.trim().to_string();
-    if input.is_empty() && !current.trim().is_empty() {
-        Ok(current.to_string())
-    } else {
-        Ok(input)
-    }
-}
-
-fn prompt_bool_with_current(label: &str, current: bool) -> Result<bool> {
-    loop {
-        let raw = prompt_with_current(label, if current { "true" } else { "false" })?;
-        if raw.trim().is_empty() {
-            return Ok(current);
-        }
-        if let Some(v) = parse_bool_input(&raw) {
-            return Ok(v);
-        }
-        println!("Invalid value. Enter true/false, yes/no, y/n, or 1/0.");
-    }
-}
-
-fn prompt_u64_with_current(label: &str, current: u64) -> Result<u64> {
-    loop {
-        let raw = prompt_with_current(label, &current.to_string())?;
-        if raw.trim().is_empty() {
-            return Ok(current);
-        }
-        match raw.parse::<u64>() {
-            Ok(v) => return Ok(v),
-            Err(_) => println!("Invalid number. Enter a non-negative integer."),
-        }
-    }
-}
-
-fn prompt_enum_with_current(label: &str, current: &str, allowed: &[&str]) -> Result<String> {
-    loop {
-        let raw = prompt_with_current(label, current)?;
-        let candidate = if raw.trim().is_empty() {
-            current.to_string()
-        } else {
-            raw.trim().to_ascii_lowercase()
-        };
-        if allowed.iter().any(|v| *v == candidate) {
-            return Ok(candidate);
-        }
-        println!("Invalid value. Supported: {}", allowed.join(", "));
-    }
-}
-
-fn read_line() -> Result<String> {
-    let mut buf = String::new();
-    io::stdin().read_line(&mut buf)?;
-    Ok(buf)
 }
 
 fn set_path(value: &mut Value, path: &[&str], new_value: Value) -> Result<()> {
@@ -623,9 +632,9 @@ fn print_change_summary(before: &Value, after: &Value) {
     if changed.is_empty() {
         return;
     }
-    println!("Changes to save:");
+    log::step("Changes to save").ok();
     for path in changed {
-        println!("- {path}");
+        log::info(&format!("  - {path}")).ok();
     }
 }
 
@@ -703,12 +712,4 @@ fn get_u64_at(value: &Value, path: &[&str]) -> Option<u64> {
         cur = cur.get(*key)?;
     }
     cur.as_u64()
-}
-
-fn parse_bool_input(value: &str) -> Option<bool> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "1" | "true" | "yes" | "y" => Some(true),
-        "0" | "false" | "no" | "n" => Some(false),
-        _ => None,
-    }
 }

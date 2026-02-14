@@ -48,11 +48,11 @@ Note: A Windows binary exists, but it is currently less stable and not as well-s
 
 ## Memory System
 
-femtobot includes long-term memory inspired by [Mem0](https://github.com/mem0ai/mem0):
+femtobot includes Rig-style long-term memory:
 
-- Entity and fact extraction from conversations.
+- Short-term chat history per session.
+- Periodic summarization of recent conversation chunks.
 - Semantic retrieval over stored memories.
-- Consolidation loop that can add, update, and delete memories.
 - Privacy-first local storage (no external vector DB required).
 
 ## Configuration
@@ -130,7 +130,7 @@ femtobot uses an actor-like model with a central `MessageBus`:
 - `Telegram`: chat input/output transport.
 - `Discord`: chat input/output transport.
 - `Tools`: executable capability modules.
-- `Memory`: extraction, retrieval, and consolidation loop.
+- `Memory`: summary ingestion + retrieval loop.
 
 All components run on a single async Tokio runtime.
 
@@ -140,7 +140,7 @@ All components run on a single async Tokio runtime.
 src/
   agent/          # Agent orchestration and core reasoning flow
   cron/           # Scheduling types and persistent schedule storage
-  memory/         # Extraction, vector/file stores, consolidation logic
+  memory/         # Summary, vector/file stores, retrieval logic
   tools/          # Tool implementations (fs, shell, web, send, cron)
   bus.rs          # Message bus for component coordination
   config.rs       # Config schema and loading

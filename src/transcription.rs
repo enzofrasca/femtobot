@@ -30,40 +30,41 @@ pub struct Transcriber {
 
 impl Transcriber {
     pub fn from_config(cfg: &AppConfig) -> Option<Self> {
-        if !cfg.transcription_enabled {
+        if !cfg.transcription.enabled {
             return None;
         }
-        if cfg.transcription_model.trim().is_empty() {
+        if cfg.transcription.model.trim().is_empty() {
             warn!("transcription disabled: missing transcription model");
             return None;
         }
 
-        let provider = cfg.transcription_provider.trim().to_ascii_lowercase();
+        let provider = cfg.transcription.provider.trim().to_ascii_lowercase();
         let backend = match provider.as_str() {
             "" | "openai" => {
-                if cfg.openai_api_key.trim().is_empty() {
+                if cfg.providers.openai.api_key.trim().is_empty() {
                     warn!("transcription disabled: missing OpenAI API key");
                     return None;
                 }
                 Backend::OpenAI(build_openai_client(
-                    &cfg.openai_api_key,
-                    &cfg.openai_base_url,
-                    &cfg.openai_extra_headers,
+                    &cfg.providers.openai.api_key,
+                    &cfg.providers.openai.base_url,
+                    &cfg.providers.openai.extra_headers,
                 ))
             }
             "mistral" => {
-                if cfg.mistral_api_key.trim().is_empty() {
+                if cfg.providers.mistral.api_key.trim().is_empty() {
                     warn!("transcription disabled: missing MISTRAL_API_KEY");
                     return None;
                 }
                 Backend::Mistral {
                     http: reqwest::Client::new(),
-                    api_key: cfg.mistral_api_key.clone(),
-                    base_url: cfg.mistral_base_url.clone(),
-                    diarize: cfg.transcription_mistral_diarize,
-                    context_bias: cfg.transcription_mistral_context_bias.clone(),
+                    api_key: cfg.providers.mistral.api_key.clone(),
+                    base_url: cfg.providers.mistral.base_url.clone(),
+                    diarize: cfg.transcription.mistral_diarize,
+                    context_bias: cfg.transcription.mistral_context_bias.clone(),
                     timestamp_granularities: cfg
-                        .transcription_mistral_timestamp_granularities
+                        .transcription
+                        .mistral_timestamp_granularities
                         .clone(),
                 }
             }
@@ -75,9 +76,9 @@ impl Transcriber {
 
         Some(Self {
             backend,
-            model: cfg.transcription_model.clone(),
-            language: cfg.transcription_language.clone(),
-            max_bytes: cfg.transcription_max_bytes.max(1),
+            model: cfg.transcription.model.clone(),
+            language: cfg.transcription.language.clone(),
+            max_bytes: cfg.transcription.max_bytes.max(1),
         })
     }
 
@@ -171,26 +172,7 @@ fn build_openai_client(
     base_url: &str,
     extra_headers: &[(String, String)],
 ) -> openai::Client {
-    use http::{HeaderMap, HeaderValue};
-
-    let mut builder = openai::Client::builder()
-        .api_key(api_key)
-        .base_url(base_url);
-    let mut headers = HeaderMap::new();
-    for (key, value) in extra_headers {
-        if let Ok(name) = http::header::HeaderName::from_bytes(key.as_bytes()) {
-            if let Ok(val) = HeaderValue::from_str(value) {
-                headers.insert(name, val);
-            }
-        }
-    }
-    if !headers.is_empty() {
-        builder = builder.http_headers(headers);
-    }
-
-    builder
-        .build()
-        .expect("failed to build OpenAI-compatible client for transcription")
+    crate::providers::build_openai_client(api_key, base_url, extra_headers)
 }
 
 fn extract_text_from_response(body: &Value) -> Option<String> {

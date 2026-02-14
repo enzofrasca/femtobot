@@ -108,13 +108,11 @@ impl CronService {
 
                 if has_jobs && next_wake_ms.is_some() {
                     // Only log if there's actually something scheduled reasonably soon
-                    // info!("Sleeping for {:?}", sleep_duration);
                 }
 
                 tokio::select! {
                     _ = loop_service.inner.notify.notified() => {
                         // Store changed, loop will restart and recompute next wake
-                        // info!("Cron store updated, recalculating schedule");
                     }
                     _ = time::sleep(sleep_duration) => {
                          // Time to run jobs?

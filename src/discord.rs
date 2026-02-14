@@ -14,7 +14,7 @@ use tracing::{info, warn};
 const DISCORD_MESSAGE_LIMIT: usize = 2000;
 
 pub async fn start(cfg: AppConfig, bus: MessageBus) -> Result<()> {
-    let token = cfg.discord_bot_token.trim().to_string();
+    let token = cfg.channels.discord.bot_token.trim().to_string();
     if token.is_empty() {
         return Err(anyhow!("discord token is missing"));
     }
@@ -47,12 +47,16 @@ struct DiscordHandler {
 impl DiscordHandler {
     fn new(cfg: &AppConfig, bus: MessageBus) -> Self {
         let allowed_channels = cfg
-            .discord_allowed_channels
+            .channels
+            .discord
+            .allowed_channels
             .iter()
             .filter_map(|raw| raw.trim().parse::<u64>().ok())
             .collect::<HashSet<_>>();
         let allow_from = cfg
-            .discord_allow_from
+            .channels
+            .discord
+            .allow_from
             .iter()
             .map(|entry| entry.trim().to_ascii_lowercase())
             .filter(|entry| !entry.is_empty())

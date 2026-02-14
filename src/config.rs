@@ -31,52 +31,144 @@ impl ProviderKind {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Sub-config structs
+// ---------------------------------------------------------------------------
+
+/// Generic provider credentials (api key, base URL, extra headers).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProviderEntry {
+    pub api_key: String,
+    pub base_url: String,
+    pub extra_headers: Vec<(String, String)>,
+}
+
+/// OpenRouter-specific provider entry (adds referer and app title headers).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OpenRouterEntry {
+    pub api_key: String,
+    pub base_url: String,
+    pub http_referer: Option<String>,
+    pub app_title: Option<String>,
+    pub extra_headers: Vec<(String, String)>,
+}
+
+/// Mistral provider entry (api key + base URL only).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MistralEntry {
+    pub api_key: String,
+    pub base_url: String,
+}
+
+/// All provider credentials.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProvidersConfig {
+    pub openrouter: OpenRouterEntry,
+    pub openai: ProviderEntry,
+    pub ollama: ProviderEntry,
+    pub mistral: MistralEntry,
+}
+
+/// Model selection & agent configuration.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelConfig {
+    pub model: String,
+    pub fallbacks: Vec<String>,
+    pub max_tool_turns: usize,
+}
+
+/// Telegram channel settings.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TelegramConfig {
+    pub bot_token: String,
+    pub allow_from: Vec<String>,
+}
+
+/// Discord channel settings.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DiscordConfig {
+    pub bot_token: String,
+    pub allow_from: Vec<String>,
+    pub allowed_channels: Vec<String>,
+}
+
+/// All channel settings.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChannelsConfig {
+    pub telegram: TelegramConfig,
+    pub discord: DiscordConfig,
+}
+
+/// Transcription (speech-to-text) settings.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TranscriptionConfig {
+    pub enabled: bool,
+    pub provider: String,
+    pub model: String,
+    pub language: Option<String>,
+    pub max_bytes: usize,
+    pub mistral_diarize: bool,
+    pub mistral_context_bias: Option<String>,
+    pub mistral_timestamp_granularities: Vec<String>,
+}
+
+/// Memory mode: none, simple (file-based), or smart (vector + file).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryMode {
+    /// No memory at all.
+    None,
+    /// File-based memory (MEMORY.md + daily notes) with auto-extraction.
+    /// No embeddings required.
+    Simple,
+    /// Rig-style long-term memory: file + local vector store with periodic
+    /// conversation summaries and semantic retrieval. Requires embeddings.
+    Smart,
+}
+
+impl MemoryMode {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "none" | "off" | "disabled" => Some(Self::None),
+            "simple" | "file" => Some(Self::Simple),
+            "smart" | "vector" | "mem0" => Some(Self::Smart),
+            _ => Option::None,
+        }
+    }
+}
+
+/// Memory (vector store for Smart mode) settings.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MemoryConfig {
+    pub mode: MemoryMode,
+    pub embedding_model: String,
+
+    pub max_memories: usize,
+}
+
+/// Tool-related settings (exec timeout, workspace restriction, web search).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ToolsConfig {
+    pub exec_timeout_secs: u64,
+    pub restrict_to_workspace: bool,
+    pub brave_api_key: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// AppConfig – composed of sub-configs
+// ---------------------------------------------------------------------------
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AppConfig {
     pub provider: ProviderKind,
-
-    pub openrouter_api_key: String,
-    pub openrouter_base_url: String,
-    pub openrouter_http_referer: Option<String>,
-    pub openrouter_app_title: Option<String>,
-    pub openrouter_extra_headers: Vec<(String, String)>,
-
-    pub openai_api_key: String,
-    pub openai_base_url: String,
-    pub openai_extra_headers: Vec<(String, String)>,
-    pub ollama_api_key: String,
-    pub ollama_base_url: String,
-    pub ollama_extra_headers: Vec<(String, String)>,
-    pub mistral_api_key: String,
-    pub mistral_base_url: String,
-
-    pub model: String,
-    pub model_fallbacks: Vec<String>,
-    pub brave_api_key: Option<String>,
-    pub telegram_bot_token: String,
-    pub telegram_allow_from: Vec<String>,
-    pub discord_bot_token: String,
-    pub discord_allow_from: Vec<String>,
-    pub discord_allowed_channels: Vec<String>,
-    pub transcription_enabled: bool,
-    pub transcription_provider: String,
-    pub transcription_model: String,
-    pub transcription_language: Option<String>,
-    pub transcription_max_bytes: usize,
-    pub transcription_mistral_diarize: bool,
-    pub transcription_mistral_context_bias: Option<String>,
-    pub transcription_mistral_timestamp_granularities: Vec<String>,
+    pub providers: ProvidersConfig,
+    pub model: ModelConfig,
+    pub channels: ChannelsConfig,
+    pub transcription: TranscriptionConfig,
+    pub memory: MemoryConfig,
+    pub tools: ToolsConfig,
     pub data_dir: PathBuf,
     pub workspace_dir: PathBuf,
-    pub exec_timeout_secs: u64,
-    pub restrict_to_workspace: bool,
-    pub max_tool_turns: usize,
-    pub memory_enabled: bool,
-    pub memory_vector_enabled: bool,
-    pub memory_embedding_model: String,
-    pub memory_extraction_model: String,
-    pub memory_max_memories: usize,
-    pub memory_extraction_interval: usize,
 }
 
 impl AppConfig {
@@ -103,57 +195,75 @@ impl AppConfig {
     fn defaults() -> Self {
         Self {
             provider: ProviderKind::OpenRouter,
-
-            openrouter_api_key: String::new(),
-            openrouter_base_url: "https://openrouter.ai/api/v1".to_string(),
-            openrouter_http_referer: None,
-            openrouter_app_title: None,
-            openrouter_extra_headers: Vec::new(),
-
-            openai_api_key: String::new(),
-            openai_base_url: "https://api.openai.com/v1".to_string(),
-            openai_extra_headers: Vec::new(),
-            ollama_api_key: String::new(),
-            ollama_base_url: "http://127.0.0.1:11434/v1".to_string(),
-            ollama_extra_headers: Vec::new(),
-            mistral_api_key: String::new(),
-            mistral_base_url: "https://api.mistral.ai/v1".to_string(),
-
-            model: "anthropic/claude-opus-4-5".to_string(),
-            model_fallbacks: Vec::new(),
-            brave_api_key: None,
-            telegram_bot_token: String::new(),
-            telegram_allow_from: Vec::new(),
-            discord_bot_token: String::new(),
-            discord_allow_from: Vec::new(),
-            discord_allowed_channels: Vec::new(),
-            transcription_enabled: true,
-            transcription_provider: "openai".to_string(),
-            transcription_model: "whisper-1".to_string(),
-            transcription_language: None,
-            transcription_max_bytes: 20 * 1024 * 1024,
-            transcription_mistral_diarize: false,
-            transcription_mistral_context_bias: None,
-            transcription_mistral_timestamp_granularities: Vec::new(),
+            providers: ProvidersConfig {
+                openrouter: OpenRouterEntry {
+                    api_key: String::new(),
+                    base_url: "https://openrouter.ai/api/v1".to_string(),
+                    http_referer: None,
+                    app_title: None,
+                    extra_headers: Vec::new(),
+                },
+                openai: ProviderEntry {
+                    api_key: String::new(),
+                    base_url: "https://api.openai.com/v1".to_string(),
+                    extra_headers: Vec::new(),
+                },
+                ollama: ProviderEntry {
+                    api_key: String::new(),
+                    base_url: "http://127.0.0.1:11434/v1".to_string(),
+                    extra_headers: Vec::new(),
+                },
+                mistral: MistralEntry {
+                    api_key: String::new(),
+                    base_url: "https://api.mistral.ai/v1".to_string(),
+                },
+            },
+            model: ModelConfig {
+                model: "anthropic/claude-opus-4-5".to_string(),
+                fallbacks: Vec::new(),
+                max_tool_turns: 20,
+            },
+            channels: ChannelsConfig {
+                telegram: TelegramConfig {
+                    bot_token: String::new(),
+                    allow_from: Vec::new(),
+                },
+                discord: DiscordConfig {
+                    bot_token: String::new(),
+                    allow_from: Vec::new(),
+                    allowed_channels: Vec::new(),
+                },
+            },
+            transcription: TranscriptionConfig {
+                enabled: true,
+                provider: "openai".to_string(),
+                model: "whisper-1".to_string(),
+                language: None,
+                max_bytes: 20 * 1024 * 1024,
+                mistral_diarize: false,
+                mistral_context_bias: None,
+                mistral_timestamp_granularities: Vec::new(),
+            },
+            memory: MemoryConfig {
+                mode: MemoryMode::Simple,
+                embedding_model: "text-embedding-3-small".to_string(),
+                max_memories: 1000,
+            },
+            tools: ToolsConfig {
+                exec_timeout_secs: 60,
+                restrict_to_workspace: false,
+                brave_api_key: None,
+            },
             data_dir: default_data_dir(),
             workspace_dir: default_workspace_dir(),
-            exec_timeout_secs: 60,
-            restrict_to_workspace: false,
-            max_tool_turns: 20,
-            memory_enabled: true,
-            memory_vector_enabled: true,
-            memory_embedding_model: "text-embedding-3-small".to_string(),
-            memory_extraction_model: "gpt-4o-mini".to_string(),
-            memory_max_memories: 1000,
-            memory_extraction_interval: 10,
         }
     }
 
     pub fn provider_api_key(&self) -> &str {
         match self.provider {
-            ProviderKind::OpenRouter => &self.openrouter_api_key,
-            ProviderKind::OpenAI => &self.openai_api_key,
-            ProviderKind::Ollama => &self.ollama_api_key,
+            ProviderKind::OpenRouter => &self.providers.openrouter.api_key,
+            ProviderKind::OpenAI => &self.providers.openai.api_key,
+            ProviderKind::Ollama => &self.providers.ollama.api_key,
         }
     }
 
@@ -165,11 +275,11 @@ impl AppConfig {
     }
 
     pub fn telegram_enabled(&self) -> bool {
-        !self.telegram_bot_token.trim().is_empty()
+        !self.channels.telegram.bot_token.trim().is_empty()
     }
 
     pub fn discord_enabled(&self) -> bool {
-        !self.discord_bot_token.trim().is_empty()
+        !self.channels.discord.bot_token.trim().is_empty()
     }
 
     pub fn model_routes(&self) -> Vec<ModelRoute> {
@@ -178,7 +288,7 @@ impl AppConfig {
 
         let primary = ModelRoute {
             provider: self.provider.clone(),
-            model: self.model.trim().to_string(),
+            model: self.model.model.trim().to_string(),
         };
         if !primary.model.is_empty() {
             let key = format!("{}/{}", primary.provider.as_str(), primary.model);
@@ -186,7 +296,7 @@ impl AppConfig {
             routes.push(primary);
         }
 
-        for raw in &self.model_fallbacks {
+        for raw in &self.model.fallbacks {
             if let Some(route) = parse_model_route(raw, &self.provider) {
                 let key = format!("{}/{}", route.provider.as_str(), route.model);
                 if seen.insert(key) {
@@ -254,68 +364,68 @@ fn apply_femtobot_config(cfg: &mut AppConfig, value: &Value) {
             .and_then(Value::as_str)
             .or_else(|| obj.get("api_key").and_then(Value::as_str))
         {
-            cfg.mistral_api_key = v.to_string();
+            cfg.providers.mistral.api_key = v.to_string();
         }
         if let Some(v) = obj
             .get("apiBase")
             .and_then(Value::as_str)
             .or_else(|| obj.get("api_base").and_then(Value::as_str))
         {
-            cfg.mistral_base_url = v.to_string();
+            cfg.providers.mistral.base_url = v.to_string();
         }
     }
 
     if let Some(model) = get_str(value, &["agents", "defaults", "model"]) {
-        cfg.model = model.to_string();
+        cfg.model.model = model.to_string();
     }
     if let Some(fallbacks) = get_array(value, &["agents", "defaults", "model_fallbacks"])
         .or_else(|| get_array(value, &["agents", "defaults", "fallbacks"]))
     {
-        cfg.model_fallbacks = fallbacks;
+        cfg.model.fallbacks = fallbacks;
     }
     if let Some(ws) = get_str(value, &["agents", "defaults", "workspace"]) {
         cfg.workspace_dir = PathBuf::from(ws);
     }
     if let Some(timeout) = get_u64(value, &["tools", "exec", "timeout"]) {
-        cfg.exec_timeout_secs = timeout;
+        cfg.tools.exec_timeout_secs = timeout;
     }
     if let Some(restrict) = get_bool(value, &["tools", "restrict_to_workspace"]) {
-        cfg.restrict_to_workspace = restrict;
+        cfg.tools.restrict_to_workspace = restrict;
     }
     if let Some(brave) = get_str(value, &["tools", "web", "search", "api_key"])
         .or_else(|| get_str(value, &["tools", "web", "search", "apiKey"]))
     {
-        cfg.brave_api_key = Some(brave.to_string());
+        cfg.tools.brave_api_key = Some(brave.to_string());
     }
     if let Some(token) = get_str(value, &["channels", "telegram", "token"]) {
-        cfg.telegram_bot_token = token.to_string();
+        cfg.channels.telegram.bot_token = token.to_string();
     }
     if let Some(list) = get_array(value, &["channels", "telegram", "allow_from"]) {
-        cfg.telegram_allow_from = list;
+        cfg.channels.telegram.allow_from = list;
     }
     if let Some(token) = get_str(value, &["channels", "discord", "token"]) {
-        cfg.discord_bot_token = token.to_string();
+        cfg.channels.discord.bot_token = token.to_string();
     }
     if let Some(list) = get_array(value, &["channels", "discord", "allow_from"]) {
-        cfg.discord_allow_from = list;
+        cfg.channels.discord.allow_from = list;
     }
     if let Some(list) = get_array(value, &["channels", "discord", "allowed_channels"]) {
-        cfg.discord_allowed_channels = list;
+        cfg.channels.discord.allowed_channels = list;
     }
     if let Some(enabled) = get_bool(value, &["channels", "telegram", "transcription", "enabled"]) {
-        cfg.transcription_enabled = enabled;
+        cfg.transcription.enabled = enabled;
     }
     if let Some(provider) = get_str(
         value,
         &["channels", "telegram", "transcription", "provider"],
     ) {
         if !provider.trim().is_empty() {
-            cfg.transcription_provider = provider.to_string();
+            cfg.transcription.provider = provider.to_string();
         }
     }
     if let Some(model) = get_str(value, &["channels", "telegram", "transcription", "model"]) {
         if !model.trim().is_empty() {
-            cfg.transcription_model = model.to_string();
+            cfg.transcription.model = model.to_string();
         }
     }
     if let Some(language) = get_str(
@@ -323,28 +433,28 @@ fn apply_femtobot_config(cfg: &mut AppConfig, value: &Value) {
         &["channels", "telegram", "transcription", "language"],
     ) {
         if language.trim().is_empty() {
-            cfg.transcription_language = None;
+            cfg.transcription.language = None;
         } else {
-            cfg.transcription_language = Some(language.to_string());
+            cfg.transcription.language = Some(language.to_string());
         }
     }
     if let Some(max_bytes) = get_u64(
         value,
         &["channels", "telegram", "transcription", "max_bytes"],
     ) {
-        cfg.transcription_max_bytes = max_bytes as usize;
+        cfg.transcription.max_bytes = max_bytes as usize;
     }
     if let Some(diarize) = get_bool(value, &["channels", "telegram", "transcription", "diarize"]) {
-        cfg.transcription_mistral_diarize = diarize;
+        cfg.transcription.mistral_diarize = diarize;
     }
     if let Some(context_bias) = get_str(
         value,
         &["channels", "telegram", "transcription", "context_bias"],
     ) {
         if context_bias.trim().is_empty() {
-            cfg.transcription_mistral_context_bias = None;
+            cfg.transcription.mistral_context_bias = None;
         } else {
-            cfg.transcription_mistral_context_bias = Some(context_bias.to_string());
+            cfg.transcription.mistral_context_bias = Some(context_bias.to_string());
         }
     }
     if let Some(grans) = get_array(
@@ -356,28 +466,35 @@ fn apply_femtobot_config(cfg: &mut AppConfig, value: &Value) {
             "timestamp_granularities",
         ],
     ) {
-        cfg.transcription_mistral_timestamp_granularities = grans;
+        cfg.transcription.mistral_timestamp_granularities = grans;
     }
     if let Some(turns) = get_u64(value, &["agents", "defaults", "max_tool_iterations"]) {
-        cfg.max_tool_turns = turns as usize;
+        cfg.model.max_tool_turns = turns as usize;
     }
-    if let Some(enabled) = get_bool(value, &["memory", "enabled"]) {
-        cfg.memory_enabled = enabled;
-    }
-    if let Some(enabled) = get_bool(value, &["memory", "vector_enabled"]) {
-        cfg.memory_vector_enabled = enabled;
+    // New "mode" key takes priority over legacy booleans.
+    if let Some(mode_str) = get_str(value, &["memory", "mode"]) {
+        if let Some(mode) = MemoryMode::parse(mode_str) {
+            cfg.memory.mode = mode;
+        }
+    } else {
+        // Backward compat: map legacy enabled / vector_enabled booleans.
+        let enabled = get_bool(value, &["memory", "enabled"]);
+        let vector = get_bool(value, &["memory", "vector_enabled"]);
+        match (enabled, vector) {
+            (Some(false), _) => cfg.memory.mode = MemoryMode::None,
+            (Some(true), Some(true)) => cfg.memory.mode = MemoryMode::Smart,
+            (Some(true), Some(false)) | (Some(true), Option::None) => {
+                cfg.memory.mode = MemoryMode::Simple
+            }
+            _ => {} // keep default
+        }
     }
     if let Some(model) = get_str(value, &["memory", "embedding_model"]) {
-        cfg.memory_embedding_model = model.to_string();
+        cfg.memory.embedding_model = model.to_string();
     }
-    if let Some(model) = get_str(value, &["memory", "extraction_model"]) {
-        cfg.memory_extraction_model = model.to_string();
-    }
+
     if let Some(max) = get_u64(value, &["memory", "max_memories"]) {
-        cfg.memory_max_memories = max as usize;
-    }
-    if let Some(interval) = get_u64(value, &["memory", "extraction_interval"]) {
-        cfg.memory_extraction_interval = interval as usize;
+        cfg.memory.max_memories = max as usize;
     }
 }
 
@@ -407,35 +524,35 @@ fn apply_provider_config(
     match provider_kind {
         ProviderKind::OpenRouter => {
             if let Some(v) = api_key {
-                cfg.openrouter_api_key = v.to_string();
+                cfg.providers.openrouter.api_key = v.to_string();
             }
             if let Some(v) = base_url {
-                cfg.openrouter_base_url = v.to_string();
+                cfg.providers.openrouter.base_url = v.to_string();
             }
             if let Some(v) = extra_headers {
-                cfg.openrouter_extra_headers = v;
+                cfg.providers.openrouter.extra_headers = v;
             }
         }
         ProviderKind::OpenAI => {
             if let Some(v) = api_key {
-                cfg.openai_api_key = v.to_string();
+                cfg.providers.openai.api_key = v.to_string();
             }
             if let Some(v) = base_url {
-                cfg.openai_base_url = v.to_string();
+                cfg.providers.openai.base_url = v.to_string();
             }
             if let Some(v) = extra_headers {
-                cfg.openai_extra_headers = v;
+                cfg.providers.openai.extra_headers = v;
             }
         }
         ProviderKind::Ollama => {
             if let Some(v) = api_key {
-                cfg.ollama_api_key = v.to_string();
+                cfg.providers.ollama.api_key = v.to_string();
             }
             if let Some(v) = base_url {
-                cfg.ollama_base_url = v.to_string();
+                cfg.providers.ollama.base_url = v.to_string();
             }
             if let Some(v) = extra_headers {
-                cfg.ollama_extra_headers = v;
+                cfg.providers.ollama.extra_headers = v;
             }
         }
     }
@@ -470,51 +587,51 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
     }
 
     if let Ok(key) = std::env::var("OPENROUTER_API_KEY") {
-        cfg.openrouter_api_key = key;
+        cfg.providers.openrouter.api_key = key;
     }
     if let Ok(base) = std::env::var("OPENROUTER_BASE_URL") {
-        cfg.openrouter_base_url = base;
+        cfg.providers.openrouter.base_url = base;
     }
     if let Ok(referer) = std::env::var("OPENROUTER_HTTP_REFERER") {
         if !referer.trim().is_empty() {
-            cfg.openrouter_http_referer = Some(referer);
+            cfg.providers.openrouter.http_referer = Some(referer);
         }
     }
     if let Ok(title) = std::env::var("OPENROUTER_APP_TITLE") {
         if !title.trim().is_empty() {
-            cfg.openrouter_app_title = Some(title);
+            cfg.providers.openrouter.app_title = Some(title);
         }
     }
 
     if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-        cfg.openai_api_key = key;
+        cfg.providers.openai.api_key = key;
     }
     if let Ok(base) = std::env::var("OPENAI_BASE_URL") {
-        cfg.openai_base_url = base;
+        cfg.providers.openai.base_url = base;
     }
     if let Ok(key) = std::env::var("OLLAMA_API_KEY") {
-        cfg.ollama_api_key = key;
+        cfg.providers.ollama.api_key = key;
     }
     if let Ok(base) = std::env::var("OLLAMA_BASE_URL") {
-        cfg.ollama_base_url = base;
+        cfg.providers.ollama.base_url = base;
     }
     if let Ok(key) = std::env::var("MISTRAL_API_KEY") {
-        cfg.mistral_api_key = key;
+        cfg.providers.mistral.api_key = key;
     }
     if let Ok(base) = std::env::var("MISTRAL_BASE_URL") {
-        cfg.mistral_base_url = base;
+        cfg.providers.mistral.base_url = base;
     }
 
     if let Ok(token) =
         std::env::var("TELOXIDE_TOKEN").or_else(|_| std::env::var("TELEGRAM_BOT_TOKEN"))
     {
-        cfg.telegram_bot_token = token;
+        cfg.channels.telegram.bot_token = token;
     }
     if let Ok(token) = std::env::var("DISCORD_BOT_TOKEN") {
-        cfg.discord_bot_token = token;
+        cfg.channels.discord.bot_token = token;
     }
     if let Ok(val) = std::env::var("FEMTOBOT_DISCORD_ALLOW_FROM") {
-        cfg.discord_allow_from = val
+        cfg.channels.discord.allow_from = val
             .split(',')
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -522,7 +639,7 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
             .collect();
     }
     if let Ok(val) = std::env::var("FEMTOBOT_DISCORD_ALLOWED_CHANNELS") {
-        cfg.discord_allowed_channels = val
+        cfg.channels.discord.allowed_channels = val
             .split(',')
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -530,45 +647,45 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
             .collect();
     }
     if let Ok(brave) = std::env::var("BRAVE_API_KEY") {
-        cfg.brave_api_key = Some(brave);
+        cfg.tools.brave_api_key = Some(brave);
     }
     if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_ENABLED") {
         if let Some(flag) = parse_bool(&val) {
-            cfg.transcription_enabled = flag;
+            cfg.transcription.enabled = flag;
         }
     }
     if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_MODEL") {
         if !val.trim().is_empty() {
-            cfg.transcription_model = val;
+            cfg.transcription.model = val;
         }
     }
     if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_PROVIDER") {
         if !val.trim().is_empty() {
-            cfg.transcription_provider = val;
+            cfg.transcription.provider = val;
         }
     }
     if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_LANGUAGE") {
         if val.trim().is_empty() {
-            cfg.transcription_language = None;
+            cfg.transcription.language = None;
         } else {
-            cfg.transcription_language = Some(val);
+            cfg.transcription.language = Some(val);
         }
     }
     if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_MAX_BYTES") {
         if let Ok(num) = val.parse::<usize>() {
-            cfg.transcription_max_bytes = num;
+            cfg.transcription.max_bytes = num;
         }
     }
     if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_DIARIZE") {
         if let Some(flag) = parse_bool(&val) {
-            cfg.transcription_mistral_diarize = flag;
+            cfg.transcription.mistral_diarize = flag;
         }
     }
     if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_CONTEXT_BIAS") {
         if val.trim().is_empty() {
-            cfg.transcription_mistral_context_bias = None;
+            cfg.transcription.mistral_context_bias = None;
         } else {
-            cfg.transcription_mistral_context_bias = Some(val);
+            cfg.transcription.mistral_context_bias = Some(val);
         }
     }
     if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_TIMESTAMP_GRANULARITIES") {
@@ -578,7 +695,7 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
-        cfg.transcription_mistral_timestamp_granularities = parsed;
+        cfg.transcription.mistral_timestamp_granularities = parsed;
     }
     if let Ok(path) =
         std::env::var("FEMTOBOT_DATA_DIR").or_else(|_| std::env::var("RUSTBOT_DATA_DIR"))
@@ -593,50 +710,52 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
     if let Ok(val) = std::env::var("FEMTOBOT_RESTRICT_TO_WORKSPACE")
         .or_else(|_| std::env::var("RUSTBOT_RESTRICT_TO_WORKSPACE"))
     {
-        cfg.restrict_to_workspace = parse_bool(&val).unwrap_or(cfg.restrict_to_workspace);
+        cfg.tools.restrict_to_workspace =
+            parse_bool(&val).unwrap_or(cfg.tools.restrict_to_workspace);
     }
     if let Ok(val) = std::env::var("FEMTOBOT_EXEC_TIMEOUT_SECS")
         .or_else(|_| std::env::var("RUSTBOT_EXEC_TIMEOUT_SECS"))
     {
         if let Ok(num) = val.parse::<u64>() {
-            cfg.exec_timeout_secs = num;
+            cfg.tools.exec_timeout_secs = num;
         }
     }
     if let Ok(val) = std::env::var("FEMTOBOT_MAX_TOOL_TURNS")
         .or_else(|_| std::env::var("RUSTBOT_MAX_TOOL_TURNS"))
     {
         if let Ok(num) = val.parse::<usize>() {
-            cfg.max_tool_turns = num;
+            cfg.model.max_tool_turns = num;
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_MEMORY_ENABLED") {
-        if let Some(flag) = parse_bool(&val) {
-            cfg.memory_enabled = flag;
+    // New env var takes priority.
+    if let Ok(val) = std::env::var("FEMTOBOT_MEMORY_MODE") {
+        if let Some(mode) = MemoryMode::parse(&val) {
+            cfg.memory.mode = mode;
         }
-    }
-    if let Ok(val) = std::env::var("FEMTOBOT_VECTOR_MEMORY_ENABLED") {
-        if let Some(flag) = parse_bool(&val) {
-            cfg.memory_vector_enabled = flag;
+    } else {
+        // Backward compat: map legacy env vars.
+        let enabled = std::env::var("FEMTOBOT_MEMORY_ENABLED")
+            .ok()
+            .and_then(|v| parse_bool(&v));
+        let vector = std::env::var("FEMTOBOT_VECTOR_MEMORY_ENABLED")
+            .ok()
+            .and_then(|v| parse_bool(&v));
+        match (enabled, vector) {
+            (Some(false), _) => cfg.memory.mode = MemoryMode::None,
+            (Some(true), Some(true)) => cfg.memory.mode = MemoryMode::Smart,
+            (Some(true), Some(false)) => cfg.memory.mode = MemoryMode::Simple,
+            _ => {} // keep current
         }
     }
     if let Ok(val) = std::env::var("FEMTOBOT_EMBEDDING_MODEL") {
         if !val.trim().is_empty() {
-            cfg.memory_embedding_model = val;
+            cfg.memory.embedding_model = val;
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_EXTRACTION_MODEL") {
-        if !val.trim().is_empty() {
-            cfg.memory_extraction_model = val;
-        }
-    }
+
     if let Ok(val) = std::env::var("FEMTOBOT_MAX_MEMORIES") {
         if let Ok(num) = val.parse::<usize>() {
-            cfg.memory_max_memories = num;
-        }
-    }
-    if let Ok(val) = std::env::var("FEMTOBOT_EXTRACTION_INTERVAL") {
-        if let Ok(num) = val.parse::<usize>() {
-            cfg.memory_extraction_interval = num;
+            cfg.memory.max_memories = num;
         }
     }
     if let Ok(val) = std::env::var("FEMTOBOT_MODEL_FALLBACKS") {
@@ -647,7 +766,7 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
         if !parsed.is_empty() {
-            cfg.model_fallbacks = parsed;
+            cfg.model.fallbacks = parsed;
         }
     }
 }

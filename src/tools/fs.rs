@@ -14,7 +14,9 @@ fn expand_path(raw: &str) -> PathBuf {
     PathBuf::from(raw)
 }
 
-fn resolve_path(
+/// Resolve a path and optionally enforce that it is under `allowed_dir`.
+/// Used by file tools and by exec (for working_dir) when restrict_to_workspace is true.
+pub(crate) fn resolve_path(
     path: &str,
     allowed_dir: Option<&Path>,
     allow_missing: bool,
@@ -103,7 +105,7 @@ impl Tool for ReadFileTool {
             if !path.is_file() {
                 return Ok(format!("Error: Not a file: {}", args.path));
             }
-            match std::fs::read_to_string(&path) {
+            match tokio::fs::read_to_string(&path).await {
                 Ok(content) => Ok(content),
                 Err(e) => Ok(format!("Error reading file: {e}")),
             }
@@ -157,11 +159,11 @@ impl Tool for WriteFileTool {
             let path = resolve_path(&args.path, self.allowed_dir.as_deref(), true)
                 .map_err(ToolError::msg)?;
             if let Some(parent) = path.parent() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
+                if let Err(e) = tokio::fs::create_dir_all(parent).await {
                     return Ok(format!("Error creating parent directories: {e}"));
                 }
             }
-            match std::fs::write(&path, args.content.as_bytes()) {
+            match tokio::fs::write(&path, args.content.as_bytes()).await {
                 Ok(_) => Ok(format!(
                     "Successfully wrote {} bytes to {}",
                     args.content.len(),
@@ -223,7 +225,7 @@ impl Tool for EditFileTool {
             if !path.exists() {
                 return Ok(format!("Error: File not found: {}", args.path));
             }
-            let content = match std::fs::read_to_string(&path) {
+            let content = match tokio::fs::read_to_string(&path).await {
                 Ok(c) => c,
                 Err(e) => return Ok(format!("Error reading file: {e}")),
             };
@@ -239,7 +241,7 @@ impl Tool for EditFileTool {
             ));
             }
             let new_content = content.replacen(&args.old_text, &args.new_text, 1);
-            match std::fs::write(&path, new_content.as_bytes()) {
+            match tokio::fs::write(&path, new_content.as_bytes()).await {
                 Ok(_) => Ok(format!("Successfully edited {}", args.path)),
                 Err(e) => Ok(format!("Error editing file: {e}")),
             }
@@ -297,10 +299,14 @@ impl Tool for ListDirTool {
                 return Ok(format!("Error: Not a directory: {}", args.path));
             }
             let mut items = Vec::new();
-            let mut entries: Vec<_> = match std::fs::read_dir(&path) {
-                Ok(iter) => iter.filter_map(Result::ok).collect(),
+            let mut entries_raw = match tokio::fs::read_dir(&path).await {
+                Ok(iter) => iter,
                 Err(e) => return Ok(format!("Error listing directory: {e}")),
             };
+            let mut entries = Vec::new();
+            while let Ok(Some(entry)) = entries_raw.next_entry().await {
+                entries.push(entry);
+            }
             entries.sort_by_key(|e| e.file_name());
             for entry in entries {
                 let p = entry.path();

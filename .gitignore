@@ -27,3 +27,5 @@
 .vscode/
 *.swp
 *.swo
+
+.firecrawl/

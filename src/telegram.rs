@@ -10,14 +10,14 @@ use teloxide::types::{ChatAction, FileId, ParseMode};
 use tracing::{info, warn};
 
 pub async fn start(cfg: AppConfig, bus: MessageBus) -> Result<()> {
-    let bot = Bot::new(cfg.telegram_bot_token.clone());
+    let bot = Bot::new(cfg.channels.telegram.bot_token.clone());
     bot.get_me()
         .await
         .map_err(|err| anyhow!("telegram authentication failed: {err}"))?;
 
     spawn_outbound_forwarder(bot.clone(), bus.subscribe_outbound());
 
-    let allowlist = cfg.telegram_allow_from.clone();
+    let allowlist = cfg.channels.telegram.allow_from.clone();
     let transcriber = Transcriber::from_config(&cfg);
     let handler: UpdateHandler<anyhow::Error> =
         Update::filter_message().endpoint(move |bot: Bot, msg: Message, bus: MessageBus| {
@@ -184,10 +184,13 @@ fn spawn_outbound_forwarder(
             }
             if let Ok(chat_id) = msg.chat_id.parse::<i64>() {
                 let rendered = markdown_to_telegram_markdown_v2(&msg.content);
-                let _ = bot
+                if let Err(e) = bot
                     .send_message(ChatId(chat_id), rendered)
                     .parse_mode(ParseMode::MarkdownV2)
-                    .await;
+                    .await
+                {
+                    warn!("Failed to send Telegram message to chat {chat_id}: {e}");
+                }
             }
         }
     });
