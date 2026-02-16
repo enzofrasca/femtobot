@@ -24,7 +24,10 @@ impl ShellGuard {
             Regex::new(r"\bdel\s+/[fq]\b").unwrap(),
             Regex::new(r"\brmdir\s+/s\b").unwrap(),
             // Disk formatting / partitioning
-            Regex::new(r"\b(format|mkfs|diskpart)\b").unwrap(),
+            // Keep `format` command blocked, but avoid matching URL query params like `?format=...`.
+            Regex::new(r"(^|[;&|]\s*|\s)format(\.com|\.exe)?\s+").unwrap(),
+            Regex::new(r"\bmkfs(\.[a-z0-9_+-]+)?\b").unwrap(),
+            Regex::new(r"\bdiskpart\b").unwrap(),
             // dd - read from or write to block devices
             Regex::new(r"\bdd\s+if=").unwrap(),
             Regex::new(r"\bdd\b.*\bof=/dev/").unwrap(),
@@ -61,6 +64,24 @@ impl ShellGuard {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ShellGuard;
+
+    #[test]
+    fn guard_allows_url_query_format_param() {
+        let guard = ShellGuard::new();
+        let cmd = r#"curl -s "wttr.in/Goiania?format=%l:+%c+%t+%h+%w""#;
+        assert!(guard.check(cmd).is_ok());
+    }
+
+    #[test]
+    fn guard_blocks_windows_format_command() {
+        let guard = ShellGuard::new();
+        assert!(guard.check("format c:").is_err());
     }
 }
 
