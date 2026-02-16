@@ -184,8 +184,8 @@ EOF
 setup_service() {
     if [[ "${OS_TYPE}" == "linux" ]]; then
         if ! command -v systemctl >/dev/null 2>&1; then
-            error "systemctl is required on Linux for background daemon mode"
-            exit 1
+			info "systemctl is required on Linux for background daemon mode"
+			return 0
         fi
 
         local service_dir="$HOME/.config/systemd/user"
