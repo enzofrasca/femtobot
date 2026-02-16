@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use etcetera::{choose_base_strategy, BaseStrategy};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -346,21 +347,48 @@ pub fn config_path() -> PathBuf {
 }
 
 fn default_config_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|p| p.join(".femtobot").join("config.json"))
+    let legacy = dirs::home_dir().map(|p| p.join(".femtobot").join("config.json"));
+    if let Some(ref p) = legacy {
+        if p.exists() {
+            return legacy;
+        }
+    }
+
+    if let Ok(strategy) = choose_base_strategy() {
+        return Some(strategy.config_dir().join("femtobot").join("config.json"));
+    }
+
+    legacy
 }
 
 fn default_data_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".femtobot")
-        .join("data")
+    let legacy = dirs::home_dir().map(|p| p.join(".femtobot").join("data"));
+    if let Some(ref p) = legacy {
+        if p.exists() {
+            return p.clone();
+        }
+    }
+
+    if let Ok(strategy) = choose_base_strategy() {
+        return strategy.data_dir().join("femtobot");
+    }
+
+    legacy.unwrap_or_else(|| PathBuf::from(".").join(".femtobot").join("data"))
 }
 
 fn default_workspace_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".femtobot")
-        .join("workspace")
+    let legacy = dirs::home_dir().map(|p| p.join(".femtobot").join("workspace"));
+    if let Some(ref p) = legacy {
+        if p.exists() {
+            return p.clone();
+        }
+    }
+
+    if let Ok(strategy) = choose_base_strategy() {
+        return strategy.data_dir().join("femtobot").join("workspace");
+    }
+
+    legacy.unwrap_or_else(|| PathBuf::from(".").join(".femtobot").join("workspace"))
 }
 
 fn load_femtobot_config() -> Option<Value> {
