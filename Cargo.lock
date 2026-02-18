@@ -755,41 +755,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
-name = "femtobot"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "cliclack",
- "cron",
- "dashmap 6.1.0",
- "dirs",
- "etcetera",
- "html2text",
- "http",
- "pulldown-cmark",
- "regex",
- "reqwest",
- "rig-core",
- "rusqlite",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "serde_yaml",
- "serenity",
- "teloxide",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
- "walkdir",
- "zip",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1425,6 +1390,41 @@ dependencies = [
  "cc",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "lightclaw"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "cliclack",
+ "cron",
+ "dashmap 6.1.0",
+ "dirs",
+ "etcetera",
+ "html2text",
+ "http",
+ "pulldown-cmark",
+ "regex",
+ "reqwest",
+ "rig-core",
+ "rusqlite",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "serenity",
+ "teloxide",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "walkdir",
+ "zip",
 ]
 
 [[package]]

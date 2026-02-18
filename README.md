@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="./assets/femtobot-logo.png" alt="femtobot" width="500">
-  <h1>femtobot: The Real Lightweight AI Assistant</h1>
+  <h1>lightclaw: The Real Lightweight AI Assistant</h1>
   <p>
     <img src="https://img.shields.io/badge/language-Rust-orange" alt="Rust">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
@@ -9,13 +8,13 @@
   </p>
 </div>
 
-`femtobot` is a fast, local-first AI assistant inspired by [OpenClaw](https://github.com/openclaw/openclaw) and [nanobot](https://github.com/HKUDS/nanobot), packaged as a single Rust binary.
+`lightclaw` is a fast, local-first AI assistant inspired by [OpenClaw](https://github.com/openclaw/openclaw) and [nanobot](https://github.com/HKUDS/nanobot), packaged as a single Rust binary.
 
-If you want agentic tooling, memory, and Telegram/Discord integration without a heavy runtime, femtobot is built for that.
+If you want agentic tooling, memory, and Telegram/Discord integration without a heavy runtime, lightclaw is built for that.
 
-## Why femtobot
+## Why lightclaw
 
-| Metric | OpenClaw | Nanobot | femtobot |
+| Metric | OpenClaw | Nanobot | lightclaw |
 |--------|----------|---------|----------|
 | Distribution | Complex repo | Python + venv | **Single binary** |
 | Disk overhead | Heavy | ~350MB env | **~15MB total** |
@@ -25,9 +24,9 @@ If you want agentic tooling, memory, and Telegram/Discord integration without a 
 ## 60-Second Quickstart
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/enzofrasca/femtobot/main/scripts/install.sh | bash
-femtobot configure
-femtobot
+curl -fsSL https://raw.githubusercontent.com/zofrasca/lightclaw/main/scripts/install.sh | bash
+lightclaw configure
+lightclaw
 ```
 
 Supported platforms:
@@ -50,7 +49,7 @@ Note: A Windows binary exists, but it is currently less stable and not as well-s
 
 ## Memory System
 
-femtobot includes Rig-style long-term memory:
+lightclaw includes Rig-style long-term memory:
 
 - Short-term chat history per session.
 - Periodic summarization of recent conversation chunks.
@@ -59,7 +58,7 @@ femtobot includes Rig-style long-term memory:
 
 ## Configuration
 
-Create `~/.femtobot/config.json`:
+Create `~/.lightclaw/config.json`:
 
 ```json
 {
@@ -125,7 +124,7 @@ Create `~/.femtobot/config.json`:
 
 ```bash
 cargo build --release
-./target/release/femtobot
+./target/release/lightclaw
 ```
 
 Cross-platform build script:
@@ -136,7 +135,7 @@ Cross-platform build script:
 
 ## Architecture
 
-femtobot uses an actor-like model with a central `MessageBus`:
+lightclaw uses an actor-like model with a central `MessageBus`:
 
 - `Agent`: context handling and LLM orchestration.
 - `Telegram`: chat input/output transport.
@@ -148,30 +147,30 @@ All components run on a single async Tokio runtime.
 
 ## Skills
 
-femtobot can discover and activate OpenClaw-style skills from:
+lightclaw can discover and activate OpenClaw-style skills from:
 
-- `~/.femtobot/workspace/skills/*/SKILL.md`
-- `~/.femtobot/workspace/.agents/skills/*/SKILL.md`
+- `~/.lightclaw/workspace/skills/*/SKILL.md`
+- `~/.lightclaw/workspace/.agents/skills/*/SKILL.md`
 - `~/.agents/skills/*/SKILL.md`
 
 When relevant, the model can call `activate_skill` to load the full instructions for a skill.
 
 ### Skills CLI
 
-femtobot includes a native `skills` command group backed by Rust APIs for ClawHub and skills.sh/source installs.
+lightclaw includes a native `skills` command group backed by Rust APIs for ClawHub and skills.sh/source installs.
 
 ```bash
 # Search on ClawHub
-femtobot skills search "calendar"
+lightclaw skills search "calendar"
 
 # Search on skills.sh
-femtobot skills find react
+lightclaw skills find react
 
 # Install from ClawHub
-femtobot skills install weather --from clawhub
+lightclaw skills install weather --from clawhub
 
 # Install from source (OpenClaw-compatible project layout)
-femtobot skills install vercel-labs/agent-skills --from skills
+lightclaw skills install vercel-labs/agent-skills --from skills
 ```
 
 For `--from skills`, installs land in `./skills` under the workspace.
@@ -179,8 +178,6 @@ For `--from skills`, installs land in `./skills` under the workspace.
 ## Project Structure
 
 ```text
-assets/
-  femtobot-logo.png
 scripts/
   build.sh
   release.sh
@@ -203,7 +200,7 @@ src/
 
 ## Powered by Rig
 
-femtobot is built on [Rig](https://rig.rs/), which provides:
+lightclaw is built on [Rig](https://rig.rs/), which provides:
 
 - Provider abstraction across OpenAI/OpenRouter-style backends
 - Structured tool calling

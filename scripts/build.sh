@@ -2,10 +2,10 @@
 set -e
 
 VERSION=${1:-"0.1.0"}
-PROJECT_NAME="femtobot"
+PROJECT_NAME="lightclaw"
 DIST_DIR="${DIST_DIR:-dist}"
 
-echo "Building femtobot v${VERSION} for all platforms..."
+echo "Building lightclaw v${VERSION} for all platforms..."
 mkdir -p "${DIST_DIR}"
 
 TARGETS=(

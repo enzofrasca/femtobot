@@ -11,7 +11,7 @@ pub fn run() -> Result<()> {
     let initial_root = root.clone();
     let mut dirty = false;
 
-    intro("femtobot configure")?;
+    intro("lightclaw configure")?;
     log::info(&format!("Config path: {}", path.display()))?;
 
     loop {
@@ -24,9 +24,9 @@ pub fn run() -> Result<()> {
             .item(MenuAction::Model, "Model", "Default model and fallbacks")
             .item(MenuAction::Channels, "Channels", "Telegram, Discord")
             .item(
-                MenuAction::WebSearch,
-                "Web provider",
-                "Brave or Firecrawl (search + fetch)",
+                MenuAction::Web,
+                "Web Settings",
+                "Web search & fetch configuration",
             )
             .item(
                 MenuAction::Transcription,
@@ -67,8 +67,8 @@ pub fn run() -> Result<()> {
                 }?;
                 dirty = root != initial_root;
             }
-            MenuAction::WebSearch => {
-                configure_web_search(&mut root)?;
+            MenuAction::Web => {
+                configure_web(&mut root)?;
                 dirty = root != initial_root;
             }
             MenuAction::Transcription => {
@@ -111,7 +111,7 @@ enum MenuAction {
     Provider,
     Model,
     Channels,
-    WebSearch,
+    Web,
     Transcription,
     Memory,
     ShowPath,
@@ -129,6 +129,14 @@ fn prompt_str(label: &str, current: &str) -> Result<String> {
     let mut prompt = input(label);
     if !current.trim().is_empty() {
         prompt = prompt.default_input(current).required(false);
+    }
+    Ok(prompt.interact()?)
+}
+
+fn prompt_str_optional(label: &str, current: &str) -> Result<String> {
+    let mut prompt = input(label).required(false);
+    if !current.trim().is_empty() {
+        prompt = prompt.default_input(current);
     }
     Ok(prompt.interact()?)
 }
@@ -262,7 +270,7 @@ fn configure_discord(root: &mut Value) -> Result<bool> {
         "Allowed Discord users (IDs/usernames, comma separated)",
         &current_allow_str,
     )?;
-    let allowed_channels = prompt_str(
+    let allowed_channels = prompt_str_optional(
         "Allowed Discord channel IDs (comma separated, blank = all)",
         &current_channels_str,
     )?;
@@ -297,7 +305,7 @@ fn configure_model(root: &mut Value) -> Result<bool> {
     let current_fallbacks_str = current_fallbacks.join(",");
 
     let model = prompt_str("Default model", current_model)?;
-    let fallbacks = prompt_str("Fallback models (comma separated)", &current_fallbacks_str)?;
+    let fallbacks = prompt_str_optional("Fallback models (comma separated)", &current_fallbacks_str)?;
     let fallback_list = parse_comma_list(&fallbacks, &current_fallbacks);
 
     set_path(root, &["agents", "defaults", "model"], Value::String(model))?;
@@ -310,14 +318,41 @@ fn configure_model(root: &mut Value) -> Result<bool> {
     Ok(root != &before)
 }
 
+fn configure_web(root: &mut Value) -> Result<bool> {
+    let before = root.clone();
+    loop {
+        let action = select("Web Settings")
+            .item("search", "Search provider", "Configure web search")
+            .item("fetch", "Fetch provider", "Configure web fetch/scraping")
+            .item("back", "Back", "Return to main menu")
+            .interact()?;
+
+        match action {
+            "search" => {
+                configure_web_search(root)?;
+            }
+            "fetch" => {
+                configure_web_fetch(root)?;
+            }
+            "back" => break,
+            _ => {}
+        }
+    }
+    Ok(root != &before)
+}
+
 fn configure_web_search(root: &mut Value) -> Result<bool> {
     let before = root.clone();
     let current_provider = get_str_at(root, &["tools", "web", "search", "provider"])
         .unwrap_or("brave")
         .to_ascii_lowercase();
-    let provider = select("Web provider")
+    let provider = select("Web search provider")
+        .item(
+            "firecrawl",
+            "Firecrawl 🔥 (Recommended)",
+            "Firecrawl Search API",
+        )
         .item("brave", "Brave", "Brave Search API")
-        .item("firecrawl", "Firecrawl", "Firecrawl Search API")
         .initial_value(&current_provider)
         .interact()?;
     set_path(
@@ -341,21 +376,75 @@ fn configure_web_search(root: &mut Value) -> Result<bool> {
         set_path(
             root,
             &["tools", "web", "search", "firecrawlApiKey"],
-            Value::String(key),
+            Value::String(key.clone()),
         )?;
+
+        // If selecting Firecrawl for search, suggest using it for fetch too.
+        let current_fetch = get_str_at(root, &["tools", "web", "fetch", "provider"])
+            .unwrap_or("native")
+            .to_ascii_lowercase();
+        if current_fetch != "firecrawl" {
+            let use_for_fetch = confirm("Use Firecrawl for web fetch/scraping too? (Recommended)")
+                .initial_value(true)
+                .interact()?;
+            if use_for_fetch {
+                set_path(
+                    root,
+                    &["tools", "web", "fetch", "provider"],
+                    Value::String("firecrawl".to_string()),
+                )?;
+            }
+        }
     } else {
         set_path(
             root,
             &["tools", "web", "search", "braveApiKey"],
             Value::String(key.clone()),
         )?;
-        // Keep legacy path for backward compatibility with existing configs.
         set_path(
             root,
             &["tools", "web", "search", "apiKey"],
             Value::String(key),
         )?;
     }
+    Ok(root != &before)
+}
+
+fn configure_web_fetch(root: &mut Value) -> Result<bool> {
+    let before = root.clone();
+    let current_provider = get_str_at(root, &["tools", "web", "fetch", "provider"])
+        .unwrap_or("native")
+        .to_ascii_lowercase();
+    let provider = select("Web fetch provider")
+        .item(
+            "native",
+            "Native",
+            "Direct HTTP requests (faster, free, less capable)",
+        )
+        .item(
+            "firecrawl",
+            "Firecrawl",
+            "Advanced scraping (handles JS, better extraction)",
+        )
+        .initial_value(&current_provider)
+        .interact()?;
+    set_path(
+        root,
+        &["tools", "web", "fetch", "provider"],
+        Value::String(provider.to_string()),
+    )?;
+
+    if provider == "firecrawl" {
+        let current_key =
+            get_str_at(root, &["tools", "web", "search", "firecrawlApiKey"]).unwrap_or("");
+        let key = prompt_secret("Firecrawl API key", current_key)?;
+        set_path(
+            root,
+            &["tools", "web", "search", "firecrawlApiKey"],
+            Value::String(key),
+        )?;
+    }
+
     Ok(root != &before)
 }
 
@@ -469,11 +558,11 @@ fn configure_transcription(root: &mut Value) -> Result<bool> {
         let diarize = confirm("Enable diarization")
             .initial_value(current_diarize)
             .interact()?;
-        let context_bias = prompt_str(
+        let context_bias = prompt_str_optional(
             "Context bias (comma-separated terms)",
             &current_context_bias,
         )?;
-        let grans_raw = prompt_str(
+        let grans_raw = prompt_str_optional(
             "Timestamp granularities (e.g. segment,word)",
             &current_grans_str,
         )?;

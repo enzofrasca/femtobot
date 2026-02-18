@@ -1,4 +1,4 @@
-use crate::config::WebSearchProvider;
+use crate::config::WebFetchProvider;
 use crate::tools::ToolError;
 use html2text::from_read;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
@@ -11,7 +11,7 @@ const DEFAULT_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWe
 const MAX_REDIRECTS: usize = 5;
 
 pub(crate) async fn run_fetch(
-    provider: WebSearchProvider,
+    provider: WebFetchProvider,
     firecrawl_api_key: Option<String>,
     args: WebFetchArgs,
 ) -> Result<String, ToolError> {
@@ -30,8 +30,8 @@ pub(crate) async fn run_fetch(
     let max_chars = args.max_chars.unwrap_or(50_000);
 
     match provider {
-        WebSearchProvider::Brave => fetch_direct_http(args.url, extract_mode, max_chars).await,
-        WebSearchProvider::Firecrawl => {
+        WebFetchProvider::Native => fetch_direct_http(args.url, extract_mode, max_chars).await,
+        WebFetchProvider::Firecrawl => {
             let Some(api_key) = firecrawl_api_key else {
                 return Ok("Error: FIRECRAWL_API_KEY not configured".to_string());
             };

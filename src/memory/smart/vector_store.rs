@@ -611,11 +611,11 @@ mod tests {
 // VectorStoreIndex implementation for Rig framework interop
 // ---------------------------------------------------------------------------
 
-/// Custom search filter for femtobot's vector store.
+/// Custom search filter for lightclaw's vector store.
 ///
 /// Implements Rig's `SearchFilter` trait so that `VectorMemoryStore` can be
 /// used with `AgentBuilder::dynamic_context()`. The canonical `Filter<Value>`
-/// operations (`eq`, `gt`, `lt`, `and`, `or`) are mapped to femtobot-specific
+/// operations (`eq`, `gt`, `lt`, `and`, `or`) are mapped to lightclaw-specific
 /// semantics:
 ///
 /// - `eq("namespace", "value")` — scope the search to a specific namespace

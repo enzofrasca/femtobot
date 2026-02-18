@@ -3,11 +3,11 @@
 /dist/
 
 # Local packaged binaries/checksums
-/femtobot-*
-/femtobot-*.sha256
+/lightclaw-*
+/lightclaw-*.sha256
 
 # Local runtime/state data
-/.femtobot/
+/.lightclaw/
 *.db
 *.sqlite
 *.sqlite3

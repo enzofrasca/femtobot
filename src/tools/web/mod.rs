@@ -1,4 +1,4 @@
-use crate::config::WebSearchProvider;
+use crate::config::{WebFetchProvider, WebSearchProvider};
 use crate::tools::ToolError;
 use rig::completion::request::ToolDefinition;
 use rig::tool::Tool;
@@ -64,12 +64,12 @@ impl Tool for WebSearchTool {
 
 #[derive(Clone)]
 pub struct WebFetchTool {
-    provider: WebSearchProvider,
+    provider: WebFetchProvider,
     firecrawl_api_key: Option<String>,
 }
 
 impl WebFetchTool {
-    pub fn new(provider: WebSearchProvider, firecrawl_api_key: Option<String>) -> Self {
+    pub fn new(provider: WebFetchProvider, firecrawl_api_key: Option<String>) -> Self {
         Self {
             provider,
             firecrawl_api_key,

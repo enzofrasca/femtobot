@@ -12,7 +12,7 @@ if [[ -z "${GITHUB_TOKEN}" ]]; then
     exit 1
 fi
 
-REPO="${REPO:-enzofrasca/femtobot}"
+REPO="${REPO:-zofrasca/lightclaw}"
 VERSION="${1:-}"
 RELEASE_NAME="v${VERSION}"
 IS_PRERELEASE=false
@@ -101,12 +101,12 @@ json_asset_id_by_name() {
 }
 
 ASSETS=(
-    "femtobot-linux-x86_64"
-    "femtobot-linux-aarch64"
-    "femtobot-linux-armv7"
-    "femtobot-darwin-x86_64"
-    "femtobot-darwin-aarch64"
-    "femtobot-windows-x86_64.exe"
+    "lightclaw-linux-x86_64"
+    "lightclaw-linux-aarch64"
+    "lightclaw-linux-armv7"
+    "lightclaw-darwin-x86_64"
+    "lightclaw-darwin-aarch64"
+    "lightclaw-windows-x86_64.exe"
 )
 
 for asset in "${ASSETS[@]}"; do
@@ -130,7 +130,7 @@ RELEASE_DATA=$(cat <<EOF
 {
   "tag_name": "v${VERSION}",
   "name": "${RELEASE_NAME}",
-  "body": "femtobot v${VERSION}\n\nBinaries for Linux (x86_64, aarch64, armv7), macOS, and Windows (Intel and Apple Silicon where supported)",
+  "body": "lightclaw v${VERSION}\n\nBinaries for Linux (x86_64, aarch64, armv7), macOS, and Windows (Intel and Apple Silicon where supported)",
   "draft": false,
   "prerelease": ${IS_PRERELEASE}
 }

@@ -87,7 +87,7 @@ impl ToolRegistry {
                 cfg.tools.firecrawl_api_key.clone(),
             ),
             web_fetch: web::WebFetchTool::new(
-                cfg.tools.web_search_provider.clone(),
+                cfg.tools.web_fetch_provider.clone(),
                 cfg.tools.firecrawl_api_key.clone(),
             ),
             activate_skill: activate_skill::ActivateSkillTool::new(skill_manager),

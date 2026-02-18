@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn memory_search_simple_scans_historical_daily_files() {
-        let workspace = std::env::temp_dir().join(format!("femtobot-tooltest-{}", Uuid::new_v4()));
+        let workspace = std::env::temp_dir().join(format!("lightclaw-tooltest-{}", Uuid::new_v4()));
         let store = MemoryStore::new(workspace.clone());
         let memory_dir = store.memory_dir().to_path_buf();
 
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn remember_tool_file_backend_persists_fact() {
-        let workspace = std::env::temp_dir().join(format!("femtobot-tooltest-{}", Uuid::new_v4()));
+        let workspace = std::env::temp_dir().join(format!("lightclaw-tooltest-{}", Uuid::new_v4()));
         let store = MemoryStore::new(workspace.clone());
         let tool = RememberTool::new_file(store.clone());
         let rt = Runtime::new().expect("runtime");
@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn memory_get_vector_path_requires_vector_mode() {
-        let workspace = std::env::temp_dir().join(format!("femtobot-tooltest-{}", Uuid::new_v4()));
+        let workspace = std::env::temp_dir().join(format!("lightclaw-tooltest-{}", Uuid::new_v4()));
         let store = MemoryStore::new(workspace.clone());
         let tool = MemoryGetTool::new(store, None);
         let rt = Runtime::new().expect("runtime");
@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn memory_get_accepts_memory_prefixed_paths() {
-        let workspace = std::env::temp_dir().join(format!("femtobot-tooltest-{}", Uuid::new_v4()));
+        let workspace = std::env::temp_dir().join(format!("lightclaw-tooltest-{}", Uuid::new_v4()));
         let store = MemoryStore::new(workspace.clone());
         std::fs::write(store.memory_dir().join("MEMORY.md"), "hello memory\n").expect("write");
         let tool = MemoryGetTool::new(store, None);

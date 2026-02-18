@@ -101,7 +101,7 @@ mod tests {
 
     #[tokio::test]
     async fn activate_skill_returns_instructions() {
-        let workspace = temp_dir("femtobot-activate-skill");
+        let workspace = temp_dir("lightclaw-activate-skill");
         let skills_dir = workspace.join("skills");
         write_skill(
             &skills_dir,

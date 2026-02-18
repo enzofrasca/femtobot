@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn append_extracted_facts_keeps_all_concurrent_writes() {
-        let workspace = std::env::temp_dir().join(format!("femtobot-memtest-{}", Uuid::new_v4()));
+        let workspace = std::env::temp_dir().join(format!("lightclaw-memtest-{}", Uuid::new_v4()));
         let store = MemoryStore::new(workspace.clone());
 
         let mut handles = Vec::new();
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn append_remembered_fact_creates_and_appends_section() {
-        let workspace = std::env::temp_dir().join(format!("femtobot-memtest-{}", Uuid::new_v4()));
+        let workspace = std::env::temp_dir().join(format!("lightclaw-memtest-{}", Uuid::new_v4()));
         let store = MemoryStore::new(workspace.clone());
 
         store.append_remembered_fact("User prefers concise responses");
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn appends_user_observation_and_grounded_fact_sections() {
-        let workspace = std::env::temp_dir().join(format!("femtobot-memtest-{}", Uuid::new_v4()));
+        let workspace = std::env::temp_dir().join(format!("lightclaw-memtest-{}", Uuid::new_v4()));
         let store = MemoryStore::new(workspace.clone());
 
         store.append_user_observation("I prefer concise replies.");

@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn discovers_workspace_skills() {
-        let workspace = temp_dir("femtobot-skills");
+        let workspace = temp_dir("lightclaw-skills");
         let workspace_skills = workspace.join("skills");
         write_skill(
             &workspace_skills,
@@ -406,7 +406,7 @@ Use this skill to check weather.
 
     #[test]
     fn precedence_uses_later_roots() {
-        let root = temp_dir("femtobot-skills-precedence");
+        let root = temp_dir("lightclaw-skills-precedence");
         let personal = root.join("personal");
         let workspace = root.join("workspace");
         write_skill(
@@ -452,7 +452,7 @@ Workspace body
 
     #[test]
     fn rejects_missing_dependencies() {
-        let root = temp_dir("femtobot-skills-deps");
+        let root = temp_dir("lightclaw-skills-deps");
         write_skill(
             &root,
             "needs-tool",

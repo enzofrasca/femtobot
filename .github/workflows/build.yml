@@ -17,16 +17,16 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_name: femtobot-linux-x86_64
+            artifact_name: lightclaw-linux-x86_64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_name: femtobot-linux-aarch64
+            artifact_name: lightclaw-linux-aarch64
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact_name: femtobot-darwin-x86_64
+            artifact_name: lightclaw-darwin-x86_64
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact_name: femtobot-darwin-aarch64
+            artifact_name: lightclaw-darwin-aarch64
 
     runs-on: ${{ matrix.os }}
 
@@ -53,10 +53,10 @@ jobs:
 
     - name: Strip Binary
       if: matrix.os == 'ubuntu-latest'
-      run: strip target/${{ matrix.target }}/release/femtobot
+      run: strip target/${{ matrix.target }}/release/lightclaw
 
     - name: Rename Binary
-      run: cp target/${{ matrix.target }}/release/femtobot ${{ matrix.artifact_name }}
+      run: cp target/${{ matrix.target }}/release/lightclaw ${{ matrix.artifact_name }}
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
@@ -83,7 +83,7 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: ./binaries/*/femtobot-*
+        files: ./binaries/*/lightclaw-*
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

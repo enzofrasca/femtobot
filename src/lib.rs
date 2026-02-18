@@ -18,7 +18,7 @@ use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
-#[command(name = "femtobot", version, about = "femtobot CLI")]
+#[command(name = "lightclaw", version, about = "lightclaw CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -112,7 +112,7 @@ async fn run() -> Result<()> {
     }
 
     if enabled_channels == 0 {
-        warn!("femtobot is running without chat input/output; press Ctrl+C to exit");
+        warn!("lightclaw is running without chat input/output; press Ctrl+C to exit");
     }
     wait_for_shutdown().await?;
 
@@ -223,7 +223,7 @@ async fn run_tui() -> Result<()> {
         }
     });
 
-    println!("femtobot TUI mode");
+    println!("lightclaw TUI mode");
     println!("Type messages and press Enter. Type /exit to quit.\n");
 
     let mut lines = io::BufReader::new(io::stdin()).lines();

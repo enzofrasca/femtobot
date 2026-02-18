@@ -164,12 +164,30 @@ impl WebSearchProvider {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WebFetchProvider {
+    Native,
+    Firecrawl,
+}
+
+impl WebFetchProvider {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "native" | "http" | "direct" => Some(Self::Native),
+            "firecrawl" => Some(Self::Firecrawl),
+            _ => None,
+        }
+    }
+}
+
 /// Tool-related settings (exec timeout, workspace restriction, web search).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolsConfig {
     pub exec_timeout_secs: u64,
     pub restrict_to_workspace: bool,
     pub web_search_provider: WebSearchProvider,
+    pub web_fetch_provider: WebFetchProvider,
     pub brave_api_key: Option<String>,
     pub firecrawl_api_key: Option<String>,
 }
@@ -197,7 +215,7 @@ impl AppConfig {
 
         if cfg.provider_requires_api_key() && cfg.provider_api_key().trim().is_empty() {
             return Err(anyhow!(
-                "missing API key for provider '{}' (set env var or providers.{}.apiKey in ~/.femtobot/config.json)",
+                "missing API key for provider '{}' (set env var or providers.{}.apiKey in ~/.lightclaw/config.json)",
                 cfg.provider.as_str(),
                 cfg.provider.as_str()
             ));
@@ -209,8 +227,8 @@ impl AppConfig {
     pub fn load_relaxed() -> Self {
         let mut cfg = Self::defaults();
 
-        if let Some(femtobot) = load_femtobot_config() {
-            apply_femtobot_config(&mut cfg, &femtobot);
+        if let Some(lightclaw) = load_lightclaw_config() {
+            apply_lightclaw_config(&mut cfg, &lightclaw);
         }
 
         apply_env_overrides(&mut cfg);
@@ -278,6 +296,7 @@ impl AppConfig {
                 exec_timeout_secs: 60,
                 restrict_to_workspace: false,
                 web_search_provider: WebSearchProvider::Brave,
+                web_fetch_provider: WebFetchProvider::Native,
                 brave_api_key: None,
                 firecrawl_api_key: None,
             },
@@ -343,11 +362,11 @@ pub struct ModelRoute {
 }
 
 pub fn config_path() -> PathBuf {
-    default_config_path().unwrap_or_else(|| PathBuf::from(".femtobot/config.json"))
+    default_config_path().unwrap_or_else(|| PathBuf::from(".lightclaw/config.json"))
 }
 
 fn default_config_path() -> Option<PathBuf> {
-    let legacy = dirs::home_dir().map(|p| p.join(".femtobot").join("config.json"));
+    let legacy = dirs::home_dir().map(|p| p.join(".lightclaw").join("config.json"));
     if let Some(ref p) = legacy {
         if p.exists() {
             return legacy;
@@ -355,14 +374,14 @@ fn default_config_path() -> Option<PathBuf> {
     }
 
     if let Ok(strategy) = choose_base_strategy() {
-        return Some(strategy.config_dir().join("femtobot").join("config.json"));
+        return Some(strategy.config_dir().join("lightclaw").join("config.json"));
     }
 
     legacy
 }
 
 fn default_data_dir() -> PathBuf {
-    let legacy = dirs::home_dir().map(|p| p.join(".femtobot").join("data"));
+    let legacy = dirs::home_dir().map(|p| p.join(".lightclaw").join("data"));
     if let Some(ref p) = legacy {
         if p.exists() {
             return p.clone();
@@ -370,14 +389,14 @@ fn default_data_dir() -> PathBuf {
     }
 
     if let Ok(strategy) = choose_base_strategy() {
-        return strategy.data_dir().join("femtobot");
+        return strategy.data_dir().join("lightclaw");
     }
 
-    legacy.unwrap_or_else(|| PathBuf::from(".").join(".femtobot").join("data"))
+    legacy.unwrap_or_else(|| PathBuf::from(".").join(".lightclaw").join("data"))
 }
 
 fn default_workspace_dir() -> PathBuf {
-    let legacy = dirs::home_dir().map(|p| p.join(".femtobot").join("workspace"));
+    let legacy = dirs::home_dir().map(|p| p.join(".lightclaw").join("workspace"));
     if let Some(ref p) = legacy {
         if p.exists() {
             return p.clone();
@@ -385,13 +404,13 @@ fn default_workspace_dir() -> PathBuf {
     }
 
     if let Ok(strategy) = choose_base_strategy() {
-        return strategy.data_dir().join("femtobot").join("workspace");
+        return strategy.data_dir().join("lightclaw").join("workspace");
     }
 
-    legacy.unwrap_or_else(|| PathBuf::from(".").join(".femtobot").join("workspace"))
+    legacy.unwrap_or_else(|| PathBuf::from(".").join(".lightclaw").join("workspace"))
 }
 
-fn load_femtobot_config() -> Option<Value> {
+fn load_lightclaw_config() -> Option<Value> {
     let path = default_config_path()?;
     if !path.exists() {
         return None;
@@ -400,7 +419,7 @@ fn load_femtobot_config() -> Option<Value> {
     serde_json::from_str::<Value>(&content).ok()
 }
 
-fn apply_femtobot_config(cfg: &mut AppConfig, value: &Value) {
+fn apply_lightclaw_config(cfg: &mut AppConfig, value: &Value) {
     if let Some(provider) = get_str(value, &["agents", "defaults", "provider"])
         .or_else(|| get_str(value, &["llm", "provider"]))
     {
@@ -449,6 +468,11 @@ fn apply_femtobot_config(cfg: &mut AppConfig, value: &Value) {
     if let Some(provider) = get_str(value, &["tools", "web", "search", "provider"]) {
         if let Some(parsed) = WebSearchProvider::parse(provider) {
             cfg.tools.web_search_provider = parsed;
+        }
+    }
+    if let Some(provider) = get_str(value, &["tools", "web", "fetch", "provider"]) {
+        if let Some(parsed) = WebFetchProvider::parse(provider) {
+            cfg.tools.web_fetch_provider = parsed;
         }
     }
     if let Some(legacy_key) = get_str(value, &["tools", "web", "search", "api_key"])
@@ -654,7 +678,7 @@ fn get_provider_object<'a>(
 
 fn apply_env_overrides(cfg: &mut AppConfig) {
     if let Ok(provider) =
-        std::env::var("FEMTOBOT_PROVIDER").or_else(|_| std::env::var("LLM_PROVIDER"))
+        std::env::var("LIGHTCLAW_PROVIDER").or_else(|_| std::env::var("LLM_PROVIDER"))
     {
         if let Some(parsed) = ProviderKind::parse(&provider) {
             cfg.provider = parsed;
@@ -705,7 +729,7 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
     if let Ok(token) = std::env::var("DISCORD_BOT_TOKEN") {
         cfg.channels.discord.bot_token = token;
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_DISCORD_ALLOW_FROM") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_DISCORD_ALLOW_FROM") {
         cfg.channels.discord.allow_from = val
             .split(',')
             .map(str::trim)
@@ -713,7 +737,7 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
             .map(|s| s.to_string())
             .collect();
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_DISCORD_ALLOWED_CHANNELS") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_DISCORD_ALLOWED_CHANNELS") {
         cfg.channels.discord.allowed_channels = val
             .split(',')
             .map(str::trim)
@@ -721,63 +745,68 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
             .map(|s| s.to_string())
             .collect();
     }
-    if let Ok(provider) = std::env::var("FEMTOBOT_WEB_SEARCH_PROVIDER") {
+    if let Ok(provider) = std::env::var("LIGHTCLAW_WEB_SEARCH_PROVIDER") {
         if let Some(parsed) = WebSearchProvider::parse(&provider) {
             cfg.tools.web_search_provider = parsed;
         }
     }
-    if let Ok(brave) = std::env::var("FEMTOBOT_BRAVE_API_KEY") {
+    if let Ok(provider) = std::env::var("LIGHTCLAW_WEB_FETCH_PROVIDER") {
+        if let Some(parsed) = WebFetchProvider::parse(&provider) {
+            cfg.tools.web_fetch_provider = parsed;
+        }
+    }
+    if let Ok(brave) = std::env::var("LIGHTCLAW_BRAVE_API_KEY") {
         cfg.tools.brave_api_key = Some(brave);
     }
     if let Ok(brave) = std::env::var("BRAVE_API_KEY") {
         cfg.tools.brave_api_key = Some(brave);
     }
-    if let Ok(firecrawl) = std::env::var("FEMTOBOT_FIRECRAWL_API_KEY") {
+    if let Ok(firecrawl) = std::env::var("LIGHTCLAW_FIRECRAWL_API_KEY") {
         cfg.tools.firecrawl_api_key = Some(firecrawl);
     }
     if let Ok(firecrawl) = std::env::var("FIRECRAWL_API_KEY") {
         cfg.tools.firecrawl_api_key = Some(firecrawl);
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_ENABLED") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_TRANSCRIPTION_ENABLED") {
         if let Some(flag) = parse_bool(&val) {
             cfg.transcription.enabled = flag;
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_MODEL") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_TRANSCRIPTION_MODEL") {
         if !val.trim().is_empty() {
             cfg.transcription.model = val;
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_PROVIDER") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_TRANSCRIPTION_PROVIDER") {
         if !val.trim().is_empty() {
             cfg.transcription.provider = val;
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_LANGUAGE") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_TRANSCRIPTION_LANGUAGE") {
         if val.trim().is_empty() {
             cfg.transcription.language = None;
         } else {
             cfg.transcription.language = Some(val);
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_MAX_BYTES") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_TRANSCRIPTION_MAX_BYTES") {
         if let Ok(num) = val.parse::<usize>() {
             cfg.transcription.max_bytes = num;
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_DIARIZE") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_TRANSCRIPTION_DIARIZE") {
         if let Some(flag) = parse_bool(&val) {
             cfg.transcription.mistral_diarize = flag;
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_CONTEXT_BIAS") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_TRANSCRIPTION_CONTEXT_BIAS") {
         if val.trim().is_empty() {
             cfg.transcription.mistral_context_bias = None;
         } else {
             cfg.transcription.mistral_context_bias = Some(val);
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_TRANSCRIPTION_TIMESTAMP_GRANULARITIES") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_TRANSCRIPTION_TIMESTAMP_GRANULARITIES") {
         let parsed = val
             .split(',')
             .map(str::trim)
@@ -787,29 +816,29 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
         cfg.transcription.mistral_timestamp_granularities = parsed;
     }
     if let Ok(path) =
-        std::env::var("FEMTOBOT_DATA_DIR").or_else(|_| std::env::var("RUSTBOT_DATA_DIR"))
+        std::env::var("LIGHTCLAW_DATA_DIR").or_else(|_| std::env::var("RUSTBOT_DATA_DIR"))
     {
         cfg.data_dir = PathBuf::from(path);
     }
     if let Ok(path) =
-        std::env::var("FEMTOBOT_WORKSPACE_DIR").or_else(|_| std::env::var("RUSTBOT_WORKSPACE_DIR"))
+        std::env::var("LIGHTCLAW_WORKSPACE_DIR").or_else(|_| std::env::var("RUSTBOT_WORKSPACE_DIR"))
     {
         cfg.workspace_dir = PathBuf::from(path);
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_RESTRICT_TO_WORKSPACE")
+    if let Ok(val) = std::env::var("LIGHTCLAW_RESTRICT_TO_WORKSPACE")
         .or_else(|_| std::env::var("RUSTBOT_RESTRICT_TO_WORKSPACE"))
     {
         cfg.tools.restrict_to_workspace =
             parse_bool(&val).unwrap_or(cfg.tools.restrict_to_workspace);
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_EXEC_TIMEOUT_SECS")
+    if let Ok(val) = std::env::var("LIGHTCLAW_EXEC_TIMEOUT_SECS")
         .or_else(|_| std::env::var("RUSTBOT_EXEC_TIMEOUT_SECS"))
     {
         if let Ok(num) = val.parse::<u64>() {
             cfg.tools.exec_timeout_secs = num;
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_MAX_TOOL_TURNS")
+    if let Ok(val) = std::env::var("LIGHTCLAW_MAX_TOOL_TURNS")
         .or_else(|_| std::env::var("RUSTBOT_MAX_TOOL_TURNS"))
     {
         if let Ok(num) = val.parse::<usize>() {
@@ -817,16 +846,16 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
         }
     }
     // New env var takes priority.
-    if let Ok(val) = std::env::var("FEMTOBOT_MEMORY_MODE") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_MEMORY_MODE") {
         if let Some(mode) = MemoryMode::parse(&val) {
             cfg.memory.mode = mode;
         }
     } else {
         // Backward compat: map legacy env vars.
-        let enabled = std::env::var("FEMTOBOT_MEMORY_ENABLED")
+        let enabled = std::env::var("LIGHTCLAW_MEMORY_ENABLED")
             .ok()
             .and_then(|v| parse_bool(&v));
-        let vector = std::env::var("FEMTOBOT_VECTOR_MEMORY_ENABLED")
+        let vector = std::env::var("LIGHTCLAW_VECTOR_MEMORY_ENABLED")
             .ok()
             .and_then(|v| parse_bool(&v));
         match (enabled, vector) {
@@ -836,18 +865,18 @@ fn apply_env_overrides(cfg: &mut AppConfig) {
             _ => {} // keep current
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_EMBEDDING_MODEL") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_EMBEDDING_MODEL") {
         if !val.trim().is_empty() {
             cfg.memory.embedding_model = val;
         }
     }
 
-    if let Ok(val) = std::env::var("FEMTOBOT_MAX_MEMORIES") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_MAX_MEMORIES") {
         if let Ok(num) = val.parse::<usize>() {
             cfg.memory.max_memories = num;
         }
     }
-    if let Ok(val) = std::env::var("FEMTOBOT_MODEL_FALLBACKS") {
+    if let Ok(val) = std::env::var("LIGHTCLAW_MODEL_FALLBACKS") {
         let parsed = val
             .split(',')
             .map(str::trim)

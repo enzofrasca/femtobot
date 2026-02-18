@@ -2,9 +2,9 @@
 set -e
 
 VERSION="${VERSION:-latest}"
-REPO="${REPO:-enzofrasca/femtobot}"
+REPO="${REPO:-zofrasca/lightclaw}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
-BINARY_NAME="femtobot"
+BINARY_NAME="lightclaw"
 TEMP_DIR=$(mktemp -d)
 cleanup() { rm -rf "${TEMP_DIR}"; }
 trap cleanup EXIT
@@ -62,7 +62,7 @@ get_binary_name() {
     local platform="$1"
     local os_type="${platform%%-*}"
     local arch_type="${platform##*-}"
-    echo "femtobot-${os_type}-${arch_type}"
+    echo "lightclaw-${os_type}-${arch_type}"
 }
 
 resolve_download_url() {
@@ -130,7 +130,7 @@ verify_checksum() {
 }
 
 create_config() {
-    local config_dir="$HOME/.femtobot"
+    local config_dir="$HOME/.lightclaw"
     local config_file="${config_dir}/config.json"
     local data_dir="${config_dir}/data"
     local workspace_dir="${config_dir}/workspace"
@@ -178,7 +178,7 @@ create_config() {
 EOF
 
     info "Config created at ${config_file}"
-    info "Run: femtobot configure"
+    info "Run: lightclaw configure"
 }
 
 setup_service() {
@@ -191,9 +191,9 @@ setup_service() {
         local service_dir="$HOME/.config/systemd/user"
         mkdir -p "${service_dir}"
 
-        cat > "${service_dir}/femtobot.service" <<EOF
+        cat > "${service_dir}/lightclaw.service" <<EOF
 [Unit]
-Description=femtobot Telegram Bot
+Description=lightclaw Telegram Bot
 After=network.target
 
 [Service]
@@ -211,8 +211,8 @@ EOF
             error "Failed to reload systemd user daemon"
             exit 1
         fi
-        if ! systemctl --user enable --now femtobot; then
-            error "Failed to enable/start femtobot service"
+        if ! systemctl --user enable --now lightclaw; then
+            error "Failed to enable/start lightclaw service"
             error "If running over SSH, user services may need login session support."
             exit 1
         fi
@@ -223,9 +223,9 @@ EOF
 
     if [[ "${OS_TYPE}" == "darwin" ]]; then
         local launch_dir="$HOME/Library/LaunchAgents"
-        local logs_dir="$HOME/.femtobot/logs"
-        local plist="${launch_dir}/io.femtobot.agent.plist"
-        local label="io.femtobot.agent"
+        local logs_dir="$HOME/.lightclaw/logs"
+        local plist="${launch_dir}/io.lightclaw.agent.plist"
+        local label="io.lightclaw.agent"
         local uid
         uid="$(id -u)"
 
@@ -249,9 +249,9 @@ EOF
   <key>WorkingDirectory</key>
   <string>${HOME}</string>
   <key>StandardOutPath</key>
-  <string>${logs_dir}/femtobot.log</string>
+  <string>${logs_dir}/lightclaw.log</string>
   <key>StandardErrorPath</key>
-  <string>${logs_dir}/femtobot.error.log</string>
+  <string>${logs_dir}/lightclaw.error.log</string>
 </dict>
 </plist>
 EOF
@@ -273,7 +273,7 @@ EOF
 
 main() {
     echo ""
-    echo " femtobot Installer"
+    echo " lightclaw Installer"
     echo "===================="
     echo ""
 
@@ -342,14 +342,14 @@ main() {
     info "Installation complete!"
     echo ""
     echo "Binary: ${INSTALL_DIR}/${BINARY_NAME}"
-    echo "Config: $HOME/.femtobot/config.json"
+    echo "Config: $HOME/.lightclaw/config.json"
     echo ""
-    if [[ "${OS_TYPE}" == "linux" ]] && [[ -f "$HOME/.config/systemd/user/femtobot.service" ]]; then
-        echo "Service status: systemctl --user status femtobot"
-        echo "Service logs:  journalctl --user -u femtobot -f"
-    elif [[ "${OS_TYPE}" == "darwin" ]] && [[ -f "$HOME/Library/LaunchAgents/io.femtobot.agent.plist" ]]; then
-        echo "Service status: launchctl print gui/$(id -u)/io.femtobot.agent"
-        echo "Service logs:  tail -f $HOME/.femtobot/logs/femtobot.log"
+    if [[ "${OS_TYPE}" == "linux" ]] && [[ -f "$HOME/.config/systemd/user/lightclaw.service" ]]; then
+        echo "Service status: systemctl --user status lightclaw"
+        echo "Service logs:  journalctl --user -u lightclaw -f"
+    elif [[ "${OS_TYPE}" == "darwin" ]] && [[ -f "$HOME/Library/LaunchAgents/io.lightclaw.agent.plist" ]]; then
+        echo "Service status: launchctl print gui/$(id -u)/io.lightclaw.agent"
+        echo "Service logs:  tail -f $HOME/.lightclaw/logs/lightclaw.log"
     else
         echo "Run: ${BINARY_NAME}"
     fi

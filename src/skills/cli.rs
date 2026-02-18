@@ -79,7 +79,7 @@ pub fn handle_skills(command: SkillsCommands) -> Result<()> {
                 .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .ok_or_else(|| anyhow!("`femtobot skills find` requires a query"))?;
+                .ok_or_else(|| anyhow!("`lightclaw skills find` requires a query"))?;
             let results = hub.search_skills_sh(query, normalize_limit(limit, 10))?;
             print_skills_sh_results(query, &results);
             Ok(())

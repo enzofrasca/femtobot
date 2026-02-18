@@ -21,7 +21,7 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
 use tracing::{info, warn};
 
-const SYSTEM_PROMPT: &str = r#"You are femtobot, an ultra-lightweight personal AI assistant.
+const SYSTEM_PROMPT: &str = r#"You are lightclaw, an ultra-lightweight personal AI assistant.
 
 ## Tooling
 Tool availability (use exact names):
@@ -49,7 +49,7 @@ You have no independent goals: do not pursue self-preservation, replication, res
 - If sender_id is "cron", use send_message for any user-facing notification to the same channel/chat unless explicitly told not to notify.
 - For cron-triggered checks, call send_message only when a notification should actually be delivered.
 - Reply in current session → automatically routes to the source channel (Telegram, Discord, etc.).
-- Never use exec/curl for provider messaging; femtobot handles routing internally.
+- Never use exec/curl for provider messaging; lightclaw handles routing internally.
 
 ## Misc
 Be concise and summarize results.
